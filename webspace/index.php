@@ -51,6 +51,15 @@
 <div class="chart-container"><canvas id="chartCapacity"></canvas></div>
 <div class="chart-container"><canvas id="chartEnergy"></canvas></div>
 <div class="chart-container"><canvas id="chartDCIR"></canvas></div>
+<div class="chart-container">
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:13px;color:#666;">
+    <span>DCIR detail (high-speed load step):</span>
+    <button onclick="dcirStep(1)">&larr; Older</button>
+    <select id="dcirSelect" onchange="dcirPick()"></select>
+    <button onclick="dcirStep(-1)">Newer &rarr;</button>
+  </div>
+  <canvas id="chartDcirDetail"></canvas>
+</div>
 
 <script>
 const COL = { T:0, V:1, I:2, CAP:3, RI:4, E:5, STATE:6 };
@@ -81,6 +90,29 @@ const chartE = makeChart('chartEnergy', 'Energy', 'darkorange', 'Energy (mWh)');
 const chartR = makeChart('chartDCIR', 'DCIR', 'purple', 'R_i (mOhm)');
 
 const allCharts = [chartV, chartI, chartC, chartE, chartR];
+
+/* DCIR detail: dual-axis (voltage left, current right) vs. time in ms */
+const chartDcirDetail = new Chart(document.getElementById('chartDcirDetail'), {
+  type: 'line',
+  data: { datasets: [
+    { label: 'Voltage (mV)', data: [], borderColor: 'royalblue', borderWidth: 2, pointRadius: 1, yAxisID: 'y' },
+    { label: 'Current (mA)', data: [], borderColor: 'crimson', borderWidth: 2, pointRadius: 1, yAxisID: 'y1' }
+  ]},
+  options: {
+    responsive: true,
+    animation: false,
+    scales: {
+      x: { type: 'linear', title: { display: true, text: 'Time (ms)' } },
+      y: { position: 'left', title: { display: true, text: 'Voltage (mV)' } },
+      y1: { position: 'right', title: { display: true, text: 'Current (mA)' }, grid: { drawOnChartArea: false } }
+    }
+  }
+});
+
+let dcirFiles = [];      /* newest first */
+let dcirSel = 0;         /* index into dcirFiles */
+let dcirFollow = true;   /* keep showing the newest as new DCIRs arrive */
+let dcirShownFile = null;
 
 function clearCharts() {
   allCharts.forEach(c => {
@@ -138,6 +170,67 @@ function fetchData() {
     .catch(err => console.error('Fetch error:', err));
 }
 
+function renderDcir(filename) {
+  if (!filename) return;
+  fetch('data.php?dcir=' + encodeURIComponent(filename))
+    .then(r => r.json())
+    .then(data => {
+      if (!data.file) return;
+      dcirShownFile = data.file;
+      chartDcirDetail.data.datasets[0].data = data.t_ms.map((t, idx) => ({ x: t, y: data.v[idx] }));
+      chartDcirDetail.data.datasets[1].data = data.t_ms.map((t, idx) => ({ x: t, y: data.i[idx] }));
+      chartDcirDetail.update();
+    })
+    .catch(err => console.error('DCIR detail error:', err));
+}
+
+function updateDcirSelect() {
+  const sel = document.getElementById('dcirSelect');
+  sel.innerHTML = '';
+  dcirFiles.forEach((f, idx) => {
+    const opt = document.createElement('option');
+    opt.value = f;
+    opt.textContent = f.replace('dcir_', '').replace('.txt', '') + (idx === 0 ? ' (latest)' : '');
+    sel.appendChild(opt);
+  });
+  if (dcirFiles.length > 0) sel.selectedIndex = Math.min(dcirSel, dcirFiles.length - 1);
+}
+
+function fetchDcirDetail() {
+  fetch('data.php?dcirlist=1')
+    .then(r => r.json())
+    .then(data => {
+      dcirFiles = data.files || [];
+      if (dcirFiles.length === 0) return;
+      if (dcirFollow) {
+        dcirSel = 0;
+      } else {
+        /* keep showing the same file even as newer ones are prepended */
+        const idx = dcirFiles.indexOf(dcirShownFile);
+        dcirSel = (idx >= 0) ? idx : Math.min(dcirSel, dcirFiles.length - 1);
+      }
+      updateDcirSelect();
+      const target = dcirFiles[dcirSel];
+      if (target && target !== dcirShownFile) renderDcir(target);
+    })
+    .catch(err => console.error('DCIR list error:', err));
+}
+
+function dcirPick() {
+  dcirSel = document.getElementById('dcirSelect').selectedIndex;
+  dcirFollow = (dcirSel === 0);
+  renderDcir(dcirFiles[dcirSel]);
+}
+
+function dcirStep(dir) {
+  /* dir = +1 -> older (higher index), -1 -> newer (lower index) */
+  if (dcirFiles.length === 0) return;
+  dcirSel = Math.min(Math.max(dcirSel + dir, 0), dcirFiles.length - 1);
+  dcirFollow = (dcirSel === 0);
+  updateDcirSelect();
+  renderDcir(dcirFiles[dcirSel]);
+}
+
 function loadFileList() {
   fetch('data.php?list=1')
     .then(r => r.json())
@@ -172,12 +265,14 @@ function startRefresh() {
   refreshTimer = setInterval(() => {
     fetchData();
     loadFileList();
+    fetchDcirDetail();
   }, 10000);
 }
 
 // Initial load
 loadFileList();
 setTimeout(fetchData, 500);
+setTimeout(fetchDcirDetail, 700);
 startRefresh();
 </script>
 

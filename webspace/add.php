@@ -61,11 +61,9 @@ if ($logFile === null || $isNew) {
     file_put_contents($DATA_DIR . '/' . $logFile, $header);
 }
 
-// Append data line
-$line = "$t;$v;$i;$cap;$ri;$e;$state\n";
-file_put_contents($DATA_DIR . '/' . $logFile, $line, FILE_APPEND | LOCK_EX);
-
-// Handle DCIR samples if present
+// A request carrying DCIR samples is a detail-only request: write the
+// high-speed sample file and do NOT append a summary row to the main log
+// (the "dcir" summary point is sent separately as a normal data line).
 if ($state === 'dcir' && isset($_GET['samples'])) {
     $dcirFile = 'dcir_' . date('Y-m-d_H-i-s') . '.txt';
     $dcirData = "t_ms;voltage_mV;current_mA\n";
@@ -77,6 +75,10 @@ if ($state === 'dcir' && isset($_GET['samples'])) {
         }
     }
     file_put_contents($DATA_DIR . '/' . $dcirFile, $dcirData);
+} else {
+    // Normal data point: append one line to the current log file
+    $line = "$t;$v;$i;$cap;$ri;$e;$state\n";
+    file_put_contents($DATA_DIR . '/' . $logFile, $line, FILE_APPEND | LOCK_EX);
 }
 
 echo "OK";

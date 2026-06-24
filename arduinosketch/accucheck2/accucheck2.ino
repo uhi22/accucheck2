@@ -181,6 +181,19 @@ static void runDcirAndLog() {
     dcirData.ri_mOhm = lastRI_mOhm;
     dcirData.state = "dcir";
     loggerSend(dcirData);
+
+    /* Also send the high-speed sample batch (best-effort) for the detail chart */
+    String samplesStr;
+    samplesStr.reserve(result.sampleCount * 20);
+    for (uint8_t i = 0; i < result.sampleCount; i++) {
+      if (i > 0) samplesStr += ",";
+      samplesStr += String(result.samples[i].time_ms);
+      samplesStr += ":";
+      samplesStr += String(result.samples[i].voltage_mV, 1);
+      samplesStr += ":";
+      samplesStr += String(result.samples[i].current_mA, 1);
+    }
+    loggerSendDcirSamples(result.ri_mOhm, dischargeGetElapsedSeconds(), samplesStr.c_str());
   } else {
     Serial.println("DCIR measurement failed.");
   }

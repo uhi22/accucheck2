@@ -127,6 +127,30 @@ bool loggerIsConnected() {
   return WiFi.status() == WL_CONNECTED;
 }
 
+void loggerSendDcirSamples(float ri_mOhm, uint32_t t_s, const char* samples) {
+  /* Best-effort: the summary "dcir" point (with ri) is logged separately and
+     buffered, so if WiFi is down we simply skip the (large) detail batch. */
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  HTTPClient http;
+  String url = String("http://") + SERVER_HOST + ":" + String(SERVER_PORT) + SERVER_PATH
+    + "?key=" + SERVER_KEY
+    + "&t=" + String(t_s)
+    + "&v=0&i=0"                /* required by add.php validation; ignored for sample requests */
+    + "&state=dcir"
+    + "&ri=" + String(ri_mOhm, 1)
+    + "&samples=" + samples;
+
+  http.setTimeout(HTTP_TIMEOUT_MS);
+  http.begin(url);
+  int code = http.GET();
+  http.end();
+  if (code != 200) {
+    Serial.print("DCIR samples HTTP error: ");
+    Serial.println(code);
+  }
+}
+
 void loggerSend(const MeasurementData &data) {
   if (WiFi.status() == WL_CONNECTED && bufCount == 0) {
     if (sendHttp(data)) {
