@@ -57,7 +57,7 @@ loop()
 1. Cell connected, auto-detected (or user sends `start`)
 2. Initial DCIR measurement
 3. ESP32 enters DISCHARGING state
-4. Every 2 minutes: pause discharge, run DCIR, resume discharge
+4. Every 1 minute: pause discharge, run DCIR, resume discharge
    - FET off → DCIR measurement (~3s) → FET on
    - Capacity/energy integration continues correctly: during the DCIR pause
      the current drops to quiescent level, which is still measured and integrated
@@ -98,12 +98,20 @@ loop()
 ## Acceptance Criteria
 
 - [ ] Auto-start: discharge begins automatically when cell is connected
-- [ ] Periodic DCIR every 2 minutes during discharge
+- [ ] Periodic DCIR every 1 minute during discharge
 - [ ] Web page: energy vs. time chart
 - [ ] Web page: R_i vs. time chart
 - [ ] Web page: DCIR detail chart (fast-sampled voltage/current during load step)
 - [ ] ESP32 sends DCIR samples batch via HTTP GET
-- [ ] Stop discharge on HTTP error or WiFi unreachable
+- [ ] Connectivity watchdog: recover WiFi on the fly on persistent HTTP/WiFi
+      failure, else full device reset (which stops the discharge and starts
+      fresh on the next boot)
+- [x] Hardware task watchdog (TWDT) resets the device if the firmware hangs
+      (covers the case the software watchdog cannot — loop not running)
+- [x] Onboard LED status indication (heartbeat / state feedback)
+- [ ] Re-think the hardware schematic visualization (the Mermaid flowchart
+      conveys the topology but reads oddly as an electrical schematic — evaluate
+      a proper schematic export, e.g. KiCad, or a cleaner notation)
 - [ ] Full discharge test runs unattended to completion
 - [ ] Capacity result within 10% of cell datasheet rating
 - [ ] No crashes or watchdog resets during multi-hour tests

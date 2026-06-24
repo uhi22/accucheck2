@@ -6,12 +6,14 @@
 #include "discharge.h"
 #include "dcir.h"
 #include "logger.h"
+#include "led.h"
+#include "watchdog.h"
 
 static float lastRI_mOhm = 0;
 static unsigned long lastDcirTime_ms = 0;
 static unsigned long autoStartCheckTime_ms = 0;
 
-#define DCIR_INTERVAL_MS   120000   /* 2 minutes */
+#define DCIR_INTERVAL_MS   60000    /* 1 minute */
 #define AUTOSTART_SETTLE_MS 3000    /* voltage must be stable for 3s */
 #define AUTOSTART_V_MIN    3000     /* mV */
 #define AUTOSTART_V_MAX    4250     /* mV */
@@ -73,11 +75,16 @@ void setup() {
   ina226Init();
   Serial.println("INA226 configured.");
 
+  ledInit();
   dischargeInit();
   loggerInit();
 
+  /* Arm last, after the blocking WiFi connect in loggerInit(), so the connect
+     loop does not trip the watchdog. */
+  watchdogInit();
+
   Serial.println("READY");
-  Serial.println("Commands: start / stop / status / reset / dcir");
+  Serial.println("Commands: start / stop / status / reset / dcir / hang");
 }
 
 static String cmdBuffer;
@@ -107,6 +114,7 @@ void handleCommand(String cmd) {
     Serial.println(" s");
   } else if (cmd == "dcir") {
     Serial.println("Running DCIR measurement...");
+    ledSetMode(LED_DCIR);  /* solid on during the blocking measurement */
     DcirResult result;
     dcirMeasure(result);
     if (result.valid) {
@@ -134,6 +142,12 @@ void handleCommand(String cmd) {
     } else {
       Serial.println("DCIR measurement failed.");
     }
+  } else if (cmd == "hang") {
+    /* Test hook: deliberately hang the loop to verify the hardware watchdog
+       resets the device after the TWDT timeout. */
+    Serial.println("Hanging on purpose - watchdog should reset in ~30 s...");
+    Serial.flush();
+    while (true) { /* feed nothing, run nothing */ }
   } else if (cmd == "reset") {
     dischargeInit();
     autoStartEnabled = false;
@@ -145,7 +159,8 @@ void handleCommand(String cmd) {
 }
 
 static void runDcirAndLog() {
-  Serial.println("Running periodic DCIR...");
+  Serial.println("Running DCIR...");
+  ledSetMode(LED_DCIR);  /* solid on during the blocking measurement */
   DcirResult result;
   dcirMeasure(result);
   if (result.valid) {
@@ -153,6 +168,19 @@ static void runDcirAndLog() {
     Serial.print("R_i = ");
     Serial.print(result.ri_mOhm, 1);
     Serial.println(" mOhm");
+
+    /* Log a dedicated "dcir" data point so every DCIR (including the initial
+       one at auto-start, before discharge begins) shows up on the website.
+       Use the DCIR's own loaded readings so the initial point is not (0,0). */
+    MeasurementData dcirData;
+    dcirData.timestamp_s = dischargeGetElapsedSeconds();
+    dcirData.voltage_mV = (int16_t)result.v_load_mV;
+    dcirData.current_mA = (int16_t)result.i_load_mA;
+    dcirData.capacity_mAh = dischargeGetCapacity_mAh();
+    dcirData.energy_mWh = dischargeGetEnergy_mWh();
+    dcirData.ri_mOhm = lastRI_mOhm;
+    dcirData.state = "dcir";
+    loggerSend(dcirData);
   } else {
     Serial.println("DCIR measurement failed.");
   }
@@ -183,6 +211,8 @@ static void checkAutoStart() {
 }
 
 void loop() {
+  watchdogFeed();
+
   while (Serial.available()) {
     char c = Serial.read();
     if (c == '\n' || c == '\r') {
@@ -202,6 +232,15 @@ void loop() {
     autoStartEnabled = false;
   }
 
+  /* Status LED follows the discharge state (LED_DCIR is set around the
+     blocking DCIR measurement inside runDcirAndLog) */
+  switch (ds) {
+    case STATE_IDLE:        ledSetMode(LED_IDLE);        break;
+    case STATE_DISCHARGING: ledSetMode(LED_DISCHARGING); break;
+    case STATE_DONE:        ledSetMode(LED_DONE);        break;
+    case STATE_ERROR:       ledSetMode(LED_ERROR);       break;
+  }
+
   if (dischargeTick()) {
     MeasurementData data;
     data.timestamp_s = dischargeGetElapsedSeconds();
@@ -213,25 +252,17 @@ void loop() {
     data.state = dischargeGetStateStr();
     loggerSend(data);
 
-    /* Periodic DCIR every 2 minutes during discharge */
+    /* Periodic DCIR every 2 minutes during discharge (runDcirAndLog logs the
+       data point itself) */
     unsigned long now = millis();
     if (now - lastDcirTime_ms >= DCIR_INTERVAL_MS) {
       lastDcirTime_ms = now;
       runDcirAndLog();
       /* Re-enable FET after DCIR (dcirMeasure leaves it off) */
       digitalWrite(FET_PIN, HIGH);
-      /* Log the DCIR result as a data point too */
-      MeasurementData dcirData;
-      dcirData.timestamp_s = dischargeGetElapsedSeconds();
-      dcirData.voltage_mV = dischargeGetLastVoltage_mV();
-      dcirData.current_mA = dischargeGetLastCurrent_mA();
-      dcirData.capacity_mAh = dischargeGetCapacity_mAh();
-      dcirData.energy_mWh = dischargeGetEnergy_mWh();
-      dcirData.ri_mOhm = lastRI_mOhm;
-      dcirData.state = "dcir";
-      loggerSend(dcirData);
     }
   }
 
   loggerTick();
+  ledTick();
 }

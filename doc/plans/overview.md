@@ -134,6 +134,8 @@ accucheck2/
         ├── discharge.h / .cpp       (FET control, discharge logic)
         ├── dcir.h / dcir.cpp        (DCIR measurement routine)
         ├── logger.h / logger.cpp    (WiFi + HTTP GET logging)
+        ├── led.h / led.cpp          (status LED / firmware heartbeat)
+        ├── watchdog.h / .cpp        (hardware task watchdog — resets on hang)
         ├── config.h                 (pins, calibration, WiFi credentials)
         └── config.h.example         (template for config.h)
 ```

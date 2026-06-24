@@ -64,6 +64,17 @@ Stored in `config.h`:
    - On successful connection, flush buffer
    - If buffer full, overwrite oldest entry
 
+5. **Connectivity watchdog**
+   - Tracks time since the last successful HTTP 200, but only escalates while
+     there is undelivered data buffered (so an idle device with no WiFi does not
+     reboot-loop)
+   - After ~30 s of persistent failure (covers the recurring `HTTP error: -1`,
+     where WiFi is associated but the socket is dead): force a WiFi
+     re-association as an on-the-fly fix
+   - After ~120 s still failing: `ESP.restart()` — this stops the discharge via
+     the FET pull-down and starts a fresh attempt (and a fresh log file) on the
+     next boot
+
 ## Server Side
 
 The PHP server implementation is covered in Phase 6 (see [phase6_server.md](phase6_server.md)).

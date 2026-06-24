@@ -7,11 +7,22 @@
 #define BUFFER_SIZE 10
 #define HTTP_TIMEOUT_MS 5000
 
+/* Connectivity watchdog: when unsent data is piling up (WiFi down or HTTP
+   persistently failing, e.g. "HTTP error: -1"), first try to recover on the
+   fly by forcing a WiFi re-association; if that does not help within the hard
+   window, reset the whole device. A reset stops the discharge (FET pull-down)
+   and starts fresh on the next boot. */
+#define CONN_SOFT_RECOVER_MS  30000   /* force WiFi re-association after 30 s */
+#define CONN_RECOVER_EVERY_MS 20000   /* but not more often than every 20 s */
+#define CONN_HARD_RESET_MS    120000  /* full reset after 2 min still failing */
+
 static MeasurementData buffer[BUFFER_SIZE];
 static uint8_t bufHead = 0;
 static uint8_t bufCount = 0;
 static unsigned long lastReconnectAttempt = 0;
 static bool firstRequest = true;
+static unsigned long lastOkMs = 0;       /* last successful HTTP 200 */
+static unsigned long lastRecoverMs = 0;  /* last forced re-association */
 
 static bool sendHttp(const MeasurementData &data) {
   HTTPClient http;
@@ -61,6 +72,28 @@ void loggerInit() {
   } else {
     Serial.println("WiFi connection failed, will retry in background.");
   }
+  lastOkMs = millis();  /* grace period before the watchdog can escalate */
+}
+
+/* Escalate when unsent data is piling up: re-associate WiFi, then reset. */
+static void connectivityWatchdog() {
+  if (bufCount == 0) return;  /* nothing undelivered -> nothing to worry about */
+
+  unsigned long now = millis();
+  unsigned long downFor = now - lastOkMs;
+
+  if (downFor > CONN_HARD_RESET_MS) {
+    Serial.println("Connectivity dead for too long - resetting device.");
+    Serial.flush();
+    digitalWrite(FET_PIN, LOW);  /* stop discharge before reset */
+    delay(50);
+    ESP.restart();
+  } else if (downFor > CONN_SOFT_RECOVER_MS && now - lastRecoverMs > CONN_RECOVER_EVERY_MS) {
+    lastRecoverMs = now;
+    Serial.println("Connectivity stalled - forcing WiFi re-association.");
+    WiFi.disconnect();
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  }
 }
 
 void loggerTick() {
@@ -72,6 +105,7 @@ void loggerTick() {
       WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
       Serial.println("WiFi reconnecting...");
     }
+    connectivityWatchdog();
     return;
   }
 
@@ -80,10 +114,13 @@ void loggerTick() {
     uint8_t idx = (bufHead - bufCount + BUFFER_SIZE) % BUFFER_SIZE;
     if (sendHttp(buffer[idx])) {
       bufCount--;
+      lastOkMs = millis();
     } else {
       break;
     }
   }
+
+  connectivityWatchdog();
 }
 
 bool loggerIsConnected() {
@@ -93,6 +130,7 @@ bool loggerIsConnected() {
 void loggerSend(const MeasurementData &data) {
   if (WiFi.status() == WL_CONNECTED && bufCount == 0) {
     if (sendHttp(data)) {
+      lastOkMs = millis();
       return;
     }
   }
