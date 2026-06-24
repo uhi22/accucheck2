@@ -22,6 +22,12 @@ current crosses that FET, and it cancels in the delta — so the protection FET'
 Rds does not inflate R_i. See the grounding architecture in
 [overview.md](overview.md#hardware-block-diagram).
 
+**WiFi modem-sleep must be off.** In the default power-save mode the ESP32 radio
+wakes every DTIM beacon (~100 ms) and draws a current burst, which the cell's
+internal resistance turns into periodic current peaks / voltage dips in the DCIR
+samples (and noise in the rest/load averages). `WiFi.setSleep(false)` keeps the
+radio draw steady so the DCIR samples are clean.
+
 ```
 1. FET off, cell supplies only quiescent load (power bank + ESP32)
 2. Measure rest state:               V_rest, I_rest
@@ -107,5 +113,5 @@ Restore normal config after DCIR measurement.
 - [x] R_i result is repeatable (spread 2.5 mOhm across 5 runs)
 - [x] Result plausible for known cell (~96 mOhm)
 - [ ] Four-wire measurement confirmed (adding wire resistance doesn't change R_i)
-- [ ] DCIR voltage/current time series visible in web GUI as a chart (DCIR detail chart — phase 7)
+- [x] DCIR voltage/current time series visible in web GUI as a chart (DCIR detail chart, phase 7)
 - [x] Voltage step and current step clearly visible in the Plotly chart

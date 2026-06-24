@@ -20,6 +20,7 @@ to an external server.
 | Power supply | USB power bank PCB (cell → 5V step-up), proven UV protection retained |
 | Logic supply | Isolated DC-DC from the power-bank 5V → galvanic break to the measurement side |
 | Grounding | Two domains, GND_PWR and GND_MEAS, joined **only** at the cell − terminal |
+| WiFi power save | Disabled (modem-sleep off) — avoids ~100 ms beacon-wake current spikes in the DCIR samples; trade-off is a steady ~320 mA cell-side ESP draw |
 | PCB | Breadboard/perfboard initially, KiCad later |
 
 ## Development Phases
@@ -33,7 +34,7 @@ to an external server.
 | 4b | DCIR measurement tooling | done | [phase4b_dcir_tooling.md](phase4b_dcir_tooling.md) |
 | 5 | WiFi & HTTP logging | done | [phase5_wifi_logging.md](phase5_wifi_logging.md) |
 | 6 | PHP server & visualization | done | [phase6_server.md](phase6_server.md) |
-| 7 | Further improvements | open | [phase7_integration.md](phase7_integration.md) |
+| 7 | Further improvements | partial | [phase7_integration.md](phase7_integration.md) |
 | 8 | (Optional) PCB design | open | [phase8_pcb.md](phase8_pcb.md) |
 
 ## Hardware Block Diagram
@@ -94,7 +95,10 @@ current out of GND_MEAS.
 
 Notes:
 - The shunt is the single point through which the entire cell current flows, so
-  capacity (mAh) and energy (Wh) include the ESP's own consumption.
+  capacity (mAh) and energy (Wh) include the ESP's own consumption. With WiFi
+  modem-sleep disabled the ESP draws a steady ~320 mA (cell side) — a notable
+  fraction of the total discharge current, which raises the effective C-rate.
+  This is accepted by design; capacity/energy are the cell's true totals.
 - Because GND_MEAS is tied to the cell − independently of the power bank, the
   load FET's gate and source share the true cell-negative reference; a gate
   pull-down keeps it **off** if the ESP loses power or hangs (fail-safe).

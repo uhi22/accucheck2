@@ -59,6 +59,13 @@ static bool sendHttp(const MeasurementData &data) {
 void loggerInit() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  /* Disable WiFi modem-sleep. In the default power-save mode the radio wakes
+     every DTIM beacon (~100 ms), drawing a current burst that appears as
+     periodic current peaks / voltage dips in the DCIR samples. A steady draw
+     also eases power delivery (fewer brownout-style glitches, possibly fewer
+     hangs). The extra constant current is still measured by the shunt and
+     cancels in the DCIR delta. */
+  WiFi.setSleep(false);
   Serial.print("WiFi connecting");
   unsigned long start = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) {

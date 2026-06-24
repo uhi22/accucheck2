@@ -97,12 +97,13 @@ loop()
 
 ## Acceptance Criteria
 
-- [ ] Auto-start: discharge begins automatically when cell is connected
-- [ ] Periodic DCIR every 1 minute during discharge
-- [ ] Web page: energy vs. time chart
-- [ ] Web page: R_i vs. time chart
-- [ ] Web page: DCIR detail chart (fast-sampled voltage/current during load step)
-- [ ] ESP32 sends DCIR samples batch via HTTP GET
+- [x] Auto-start: discharge begins automatically when cell is connected
+- [x] Periodic DCIR every 1 minute during discharge
+- [x] Web page: energy vs. time chart
+- [x] Web page: R_i vs. time chart
+- [x] Web page: DCIR detail chart (fast-sampled voltage/current during load
+      step), with dropdown + older/newer browsing and live auto-follow
+- [x] ESP32 sends DCIR samples batch via HTTP GET
 - [ ] Connectivity watchdog: recover WiFi on the fly on persistent HTTP/WiFi
       failure, else full device reset (which stops the discharge and starts
       fresh on the next boot)
