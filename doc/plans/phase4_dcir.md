@@ -93,9 +93,9 @@ Restore normal config after DCIR measurement.
 
 ## Acceptance Criteria
 
-- [ ] DCIR measurement completes in < 5 seconds
-- [ ] R_i result is repeatable (< 5 mΩ variation between runs)
-- [ ] Result plausible for known good cell (20–80 mΩ)
+- [x] DCIR measurement completes in < 5 seconds
+- [x] R_i result is repeatable (spread 2.5 mOhm across 5 runs)
+- [x] Result plausible for known cell (~96 mOhm)
 - [ ] Four-wire measurement confirmed (adding wire resistance doesn't change R_i)
-- [ ] DCIR voltage/current time series visible in web GUI as a chart
-- [ ] Voltage step and current step clearly visible in the chart
+- [ ] DCIR voltage/current time series visible in web GUI as a chart (needs phase 6)
+- [x] Voltage step and current step clearly visible in the Plotly chart

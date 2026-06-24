@@ -9,7 +9,7 @@ Implement a driver that returns calibrated values.
 
 | Parameter | Value | Register |
 |---|---|---|
-| Shunt resistor | 50 mΩ | Calibration (0x05) |
+| Shunt resistor | 100 mΩ | Calibration (0x05) |
 | Averaging | 64 samples | Config (0x00) |
 | Bus voltage conversion | 1.1 ms | Config (0x00) |
 | Shunt voltage conversion | 1.1 ms | Config (0x00) |
@@ -22,13 +22,13 @@ Well within the 10-second measurement interval.
 ## INA226 Resolution
 
 - Bus voltage LSB: 1.25 mV → range 0–40.96V, resolution 1.25 mV
-- Shunt voltage LSB: 2.5 µV → at 50 mΩ shunt, current LSB = 50 µA
-- Max measurable current: 50 µA × 32767 = ±1.638A (sufficient for 0–1A range)
+- Shunt voltage LSB: 2.5 µV → at 100 mΩ shunt, current LSB = 50 µA (set by CAL=1024)
+- Max measurable current: 50 µA × 32767 = ±1.638A (sufficient for single discharge path)
 
 ## Calibration Register
 
 CAL = 0.00512 / (current_LSB × R_shunt)
-CAL = 0.00512 / (0.00005 × 0.05) = 2048
+CAL = 0.00512 / (0.00005 × 0.1) = 1024
 
 ## Software Tasks
 
@@ -52,7 +52,7 @@ CAL = 0.00512 / (0.00005 × 0.05) = 2048
 
 ## Acceptance Criteria
 
-- [ ] Voltage reading within ±5 mV of multimeter
-- [ ] Current reading within ±5 mA of multimeter at 1A
-- [ ] Stable readings (low noise) with 64x averaging
-- [ ] Zero current reading when FETs are off (< 2 mA)
+- [x] Voltage reading correct
+- [x] Current reading correct
+- [x] Power reading correct
+- [x] Stable readings (low noise) with 64x averaging

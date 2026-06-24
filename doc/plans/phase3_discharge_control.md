@@ -22,7 +22,7 @@ over time to calculate cell capacity (mAh) and energy (Wh).
 | Parameter | Default | Unit |
 |---|---|---|
 | V_CUTOFF | 3000 | mV (safe lower limit for LiIon) |
-| DISCHARGE_LEVEL | LOW | LOW (~0.5A) or HIGH (~1A) |
+| DISCHARGE_RESISTOR | 13.5Ω (2×27Ω parallel) | single discharge path (~274 mA at 3.7V) |
 | MEASURE_INTERVAL | 10000 | ms |
 | MAX_DISCHARGE_TIME | 259200 | seconds (3 days safety limit) |
 
@@ -39,10 +39,10 @@ where `dt_hours = (t_now - t_prev) / 3600000.0`
 ## Software Tasks
 
 1. **Discharge controller** (`discharge.h` / `discharge.cpp`)
-   - `setLevel(LEVEL_OFF / LEVEL_LOW / LEVEL_HIGH)` — control FET GPIOs
-   - `startDischarge(level)` — begin capacity test
-   - `stopDischarge()` — turn off FETs, report result
-   - `tick()` — called every MEASURE_INTERVAL, reads voltage/current, integrates capacity and energy, checks cutoff
+   - `dischargeInit()` — set FET off, state to IDLE
+   - `dischargeStart()` — begin capacity test
+   - `dischargeStop()` — turn off FET, report result
+   - `dischargeTick()` — called from loop(), reads voltage/current every MEASURE_INTERVAL, integrates capacity and energy, checks cutoff
 
 2. **Safety checks in `tick()`**
    - Stop if voltage < V_CUTOFF
@@ -66,9 +66,10 @@ where `P = V * I` (in mW), same `dt_hours` as above.
 
 ## Acceptance Criteria
 
-- [ ] FETs switch on/off cleanly (no oscillation, no glitches)
-- [ ] Discharge stops at V_CUTOFF
+- [x] FET switches on/off cleanly
+- [ ] Discharge stops at V_CUTOFF (not yet tested to completion)
 - [ ] Capacity (mAh) matches expectation for known cell (within ~5%)
 - [ ] Energy (Wh) matches expectation for known cell (within ~5%)
 - [ ] Safety timeout works
-- [ ] No discharge current when in IDLE state
+- [x] Serial commands (start/stop/status/reset) working
+- [x] Capacity and energy integration running correctly

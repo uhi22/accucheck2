@@ -16,13 +16,12 @@
 
 // --- I2C / INA226 ---
 #define INA226_ADDRESS  0x40
-#define SHUNT_RESISTOR_MOHM  50
+#define SHUNT_RESISTOR_MOHM  100
 #define I2C_SDA  21
 #define I2C_SCL  22
 
-// --- FET GPIOs ---
-#define FET_LOW_PIN   25
-#define FET_HIGH_PIN  26
+// --- FET GPIO ---
+#define FET_PIN  25
 
 // --- Discharge parameters ---
 #define V_CUTOFF_MV          3000

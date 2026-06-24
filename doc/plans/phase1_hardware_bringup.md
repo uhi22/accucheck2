@@ -63,13 +63,6 @@ and read raw register values from the INA226.
 - [x] Serial output shows register values
 - [x] FET GPIOs confirmed LOW at boot (no unwanted discharge)
 
-## Resistor Value Selection
+## Resistor Value
 
-For ~0.5A at 3.7V nominal:
-- R_low = 7.5Ω (→ 0.49A), power rating ≥ 2W
-
-For ~1A at 3.7V nominal:
-- R_high = 3.9Ω (→ 0.95A), power rating ≥ 4W
-
-These are starting points — exact values depend on available resistors.
-Both FETs on simultaneously gives ~2.5Ω → ~1.5A (optional third level).
+Single discharge path: 2× 27Ω in parallel = 13.5Ω → ~274 mA at 3.7V nominal.

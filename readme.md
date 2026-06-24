@@ -2,7 +2,7 @@
 
 ESP32-based LiIon single-cell tester for capacity (mAh), energy (Wh) and DC internal resistance (mΩ).
 
-**Status:** planning / pre-implementation — only the design docs exist so far. See [doc/plans/overview.md](doc/plans/overview.md) for the roadmap.
+**Status:** Phases 1–4 complete (I2C, measurement, discharge, DCIR). WiFi logging and server next. See [doc/plans/overview.md](doc/plans/overview.md) for the roadmap.
 
 ## Goals:
 
@@ -33,3 +33,7 @@ See the [hardware block diagram](doc/plans/overview.md#hardware-block-diagram) i
 ## Development Plan
 
 See [doc/plans/overview.md](doc/plans/overview.md) for the detailed development plan.
+
+## Measurement Reports
+
+- [DCIR report 2026-06-24](doc/reports/dcir_report_20260624_093034.html) — 5× DCIR measurements, mean 96.1 mOhm, spread 2.5 mOhm

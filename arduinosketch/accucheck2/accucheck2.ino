@@ -2,6 +2,9 @@
 
 #include <Wire.h>
 #include "config.h"
+#include "ina226.h"
+#include "discharge.h"
+#include "dcir.h"
 
 void scanI2C() {
   Serial.println("Scanning I2C bus...");
@@ -46,18 +49,94 @@ void setup() {
   Serial.println();
   Serial.println("accucheck2 starting...");
 
-  pinMode(FET_LOW_PIN, OUTPUT);
-  pinMode(FET_HIGH_PIN, OUTPUT);
-  digitalWrite(FET_LOW_PIN, LOW);
-  digitalWrite(FET_HIGH_PIN, LOW);
-  Serial.println("FET GPIOs initialized LOW.");
+  pinMode(FET_PIN, OUTPUT);
+  digitalWrite(FET_PIN, LOW);
+  Serial.println("FET GPIO initialized LOW.");
 
   Wire.begin(I2C_SDA, I2C_SCL);
   scanI2C();
   checkINA226();
+  ina226Init();
+  Serial.println("INA226 configured.");
+
+  dischargeInit();
 
   Serial.println("READY");
+  Serial.println("Commands: start / stop / status / reset / dcir");
+}
+
+static String cmdBuffer;
+
+void handleCommand(String cmd) {
+  cmd.trim();
+  if (cmd == "start") {
+    dischargeStart();
+    Serial.println("t_s\tV_mV\tI_mA\tcap_mAh\te_mWh");
+  } else if (cmd == "stop") {
+    dischargeStop();
+  } else if (cmd == "status") {
+    Serial.print("State: ");
+    Serial.println(dischargeGetStateStr());
+    Serial.print("V=");
+    Serial.print(ina226ReadBusVoltage_mV());
+    Serial.print(" mV, I=");
+    Serial.print(ina226ReadCurrent_mA());
+    Serial.print(" mA, Cap=");
+    Serial.print(dischargeGetCapacity_mAh(), 1);
+    Serial.print(" mAh, E=");
+    Serial.print(dischargeGetEnergy_mWh(), 1);
+    Serial.print(" mWh, t=");
+    Serial.print(dischargeGetElapsedSeconds());
+    Serial.println(" s");
+  } else if (cmd == "dcir") {
+    Serial.println("Running DCIR measurement...");
+    DcirResult result;
+    dcirMeasure(result);
+    if (result.valid) {
+      Serial.print("R_i = ");
+      Serial.print(result.ri_mOhm, 1);
+      Serial.println(" mOhm");
+      Serial.print("V_rest=");
+      Serial.print(result.v_rest_mV, 2);
+      Serial.print(" mV, I_rest=");
+      Serial.print(result.i_rest_mA, 2);
+      Serial.print(" mA, V_load=");
+      Serial.print(result.v_load_mV, 2);
+      Serial.print(" mV, I_load=");
+      Serial.print(result.i_load_mA, 2);
+      Serial.println(" mA");
+      Serial.println("Samples (t_ms, V_mV, I_mA):");
+      for (uint8_t i = 0; i < result.sampleCount; i++) {
+        Serial.print(result.samples[i].time_ms);
+        Serial.print("\t");
+        Serial.print(result.samples[i].voltage_mV, 2);
+        Serial.print("\t");
+        Serial.println(result.samples[i].current_mA, 2);
+      }
+    } else {
+      Serial.println("DCIR measurement failed.");
+    }
+  } else if (cmd == "reset") {
+    dischargeInit();
+    Serial.println("Reset to IDLE.");
+  } else {
+    Serial.print("Unknown command: ");
+    Serial.println(cmd);
+  }
 }
 
 void loop() {
+  while (Serial.available()) {
+    char c = Serial.read();
+    if (c == '\n' || c == '\r') {
+      if (cmdBuffer.length() > 0) {
+        handleCommand(cmdBuffer);
+        cmdBuffer = "";
+      }
+    } else {
+      cmdBuffer += c;
+    }
+  }
+
+  dischargeTick();
 }
