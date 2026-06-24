@@ -58,10 +58,10 @@ and read raw register values from the INA226.
 
 ## Acceptance Criteria
 
-- [ ] INA226 detected on I2C bus at address 0x40
-- [ ] Manufacturer and die ID read correctly
-- [ ] Serial output shows register values
-- [ ] FET GPIOs confirmed LOW at boot (no unwanted discharge)
+- [x] INA226 detected on I2C bus at address 0x40
+- [x] Manufacturer and die ID read correctly
+- [x] Serial output shows register values
+- [x] FET GPIOs confirmed LOW at boot (no unwanted discharge)
 
 ## Resistor Value Selection
 
