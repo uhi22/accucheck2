@@ -9,10 +9,12 @@ Design a dedicated PCB in KiCad once the breadboard prototype is validated.
 - Schematic capture from validated breadboard circuit
 - Component footprint selection
 - PCB layout with attention to:
-  - Kelvin (four-wire) sense traces for INA226
-  - Thick traces / copper pours for discharge current paths
+  - Two ground domains (GND_PWR, GND_MEAS) joined only at the cell − star point
+  - Isolated DC-DC placement (barrier between power-bank side and logic side)
+  - Kelvin (four-wire) sense traces for INA226 (VBUS→Cell+, GND→Cell−)
+  - Thick traces / copper pours for discharge current paths (GND_PWR)
   - Thermal relief for power resistors
-  - FET gate routing away from sense lines
+  - FET gate routing away from sense lines; gate pull-down to GND_MEAS
 - Connector choices: spring-loaded cell holder or screw terminals
 - Optional: NTC footprint for temperature sensing
 

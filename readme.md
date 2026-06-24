@@ -2,7 +2,7 @@
 
 ESP32-based LiIon single-cell tester for capacity (mAh), energy (Wh) and DC internal resistance (mΩ).
 
-**Status:** Phases 1–4 complete (I2C, measurement, discharge, DCIR). WiFi logging and server next. See [doc/plans/overview.md](doc/plans/overview.md) for the roadmap.
+**Status:** Phases 2–6 complete (measurement, discharge, DCIR, WiFi logging, PHP server & live web visualization). Hardware grounding/isolation rework (phase 1) and further improvements (phase 7) in progress. See [doc/plans/overview.md](doc/plans/overview.md) for the roadmap.
 
 ## Goals:
 
@@ -22,11 +22,11 @@ Combined with Four-Wire measurement, to eliminate the effect of contact resistan
 
 - ESP32 for I2C, GPIOs, WiFi
 - INA226 for measurement of cell voltage and cell current (via shunt). 16 bit resolution. I2C connection to the ESP32
-- shunt placed directly at the cell terminal, so the INA226 measures the **total** cell current (discharge resistors + ESP32 supply); capacity and energy therefore include the tester's own consumption
-- multiple discharge resistors, controlled via n-channel-FETs, to allow different discharge currents
-- typical discharge current 1A, selectable also 0.5A
+- shunt (100 mΩ) placed directly at the cell terminal, so the INA226 measures the **total** cell current (discharge load + ESP32 supply); capacity and energy therefore include the tester's own consumption
+- single discharge path (13.5 Ω = 2×27 Ω parallel, ~274 mA), controlled via an n-channel FET
 - optional: NTC for cell temperature measurement
-- supply with PCB of an USB power bank. Includes cell-to-5V-step-up, undervoltage shutdown, shortcut protection
+- supply with PCB of an USB power bank (cell-to-5V step-up, undervoltage shutdown, short-circuit protection), feeding the ESP through an **isolated DC-DC** so the measurement side has its own ground (true 4-wire sensing, fail-safe FET control)
+- two ground domains (GND_PWR, GND_MEAS) joined only at the cell − terminal
 
 See the [hardware block diagram](doc/plans/overview.md#hardware-block-diagram) in the overview for the full wiring concept.
 

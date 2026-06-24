@@ -3,7 +3,7 @@
 ## Goal
 
 Measure the cell's internal resistance using the load-step method (DCIR),
-leveraging the FET-switched discharge resistors as the load.
+leveraging the FET-switched discharge resistor as the load.
 Log voltage and current over time during the DCIR sequence for visualization
 in the web GUI.
 
@@ -11,12 +11,19 @@ in the web GUI.
 
 **Note:** The cell also powers the ESP32 via the power bank PCB, and because the
 power bank taps in downstream of the shunt, this quiescent current I_rest is
-measured even with the FETs off. The DCIR formula uses the *difference* in
+measured even with the FET off. The DCIR formula uses the *difference* in
 voltage and current between rest and loaded states, so this baseline draw cancels
 out.
 
+**Important for accuracy:** the discharge load returns to the cell − terminal via
+GND_PWR (not through the power bank), so the load-step current does **not** flow
+through the power bank's internal protection FET. Only the ~constant ESP supply
+current crosses that FET, and it cancels in the delta — so the protection FET's
+Rds does not inflate R_i. See the grounding architecture in
+[overview.md](overview.md#hardware-block-diagram).
+
 ```
-1. FETs off, cell supplies only quiescent load (power bank + ESP32)
+1. FET off, cell supplies only quiescent load (power bank + ESP32)
 2. Measure rest state:               V_rest, I_rest
 3. Switch on load (FET):             wait for settling (~100 ms)
 4. Measure loaded state:             V_load, I_load
@@ -27,9 +34,12 @@ R_internal = (V_rest - V_load) / (I_load - I_rest)
 
 ### Four-Wire Advantage
 
-Because the INA226 senses voltage directly at the cell terminals (not through
-the current path), contact resistance of clips/wires is excluded from the
-R_internal measurement.
+Because the INA226 senses voltage directly at the cell terminals (VBUS Kelvin to
+Cell+, GND via GND_MEAS to Cell−) and the measurement ground carries essentially
+no current, contact resistance of clips/wires and supply-current IR drops are
+excluded from the R_internal measurement. This is only true with the two-domain
+grounding (GND_PWR / GND_MEAS joined only at Cell−); see
+[overview.md](overview.md#hardware-block-diagram).
 
 ## Timing
 
@@ -57,12 +67,12 @@ Restore normal config after DCIR measurement.
 ## Software Tasks
 
 1. **DCIR module** (`dcir.h` / `dcir.cpp`)
-   - `measureDCIR(level)` — full DCIR sequence, returns R_i in mΩ
+   - `measureDCIR()` — full DCIR sequence, returns R_i in mΩ
    - Steps:
-     1. Ensure FETs off, wait 2s rest
+     1. Ensure FET off, wait 2s rest
      2. Sample V and I at ~11 ms intervals during rest (last ~220 ms), store 20 samples in RAM
      3. Read V_rest and I_rest (average of last 5 rest samples)
-     4. Switch on selected FET
+     4. Switch on the load FET
      5. Sample V and I at ~11 ms intervals for ~220 ms settling, store 20 samples in RAM
      6. Read V_load and I_load (average of last 5 loaded samples)
      7. Switch off FET
@@ -97,5 +107,5 @@ Restore normal config after DCIR measurement.
 - [x] R_i result is repeatable (spread 2.5 mOhm across 5 runs)
 - [x] Result plausible for known cell (~96 mOhm)
 - [ ] Four-wire measurement confirmed (adding wire resistance doesn't change R_i)
-- [ ] DCIR voltage/current time series visible in web GUI as a chart (needs phase 6)
+- [ ] DCIR voltage/current time series visible in web GUI as a chart (DCIR detail chart — phase 7)
 - [x] Voltage step and current step clearly visible in the Plotly chart

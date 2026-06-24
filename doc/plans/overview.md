@@ -17,14 +17,16 @@ to an external server.
 | Discharge levels | 1 (13.5Ω = 2×27Ω parallel, ~274 mA) |
 | Logging | HTTP GET to external server, parameters in URL |
 | Measurement interval | 10 seconds |
-| Power supply | USB power bank PCB (cell → 5V step-up) |
+| Power supply | USB power bank PCB (cell → 5V step-up), proven UV protection retained |
+| Logic supply | Isolated DC-DC from the power-bank 5V → galvanic break to the measurement side |
+| Grounding | Two domains, GND_PWR and GND_MEAS, joined **only** at the cell − terminal |
 | PCB | Breadboard/perfboard initially, KiCad later |
 
 ## Development Phases
 
 | Phase | Description | Status | Details |
 |---|---|---|---|
-| 1 | Hardware setup & basic I2C | done | [phase1_hardware_bringup.md](phase1_hardware_bringup.md) |
+| 1 | Hardware setup & basic I2C | partial | [phase1_hardware_bringup.md](phase1_hardware_bringup.md) |
 | 2 | Measurement & calibration | done | [phase2_measurement.md](phase2_measurement.md) |
 | 3 | Discharge control & capacity test | partial | [phase3_discharge_control.md](phase3_discharge_control.md) |
 | 4 | DCIR measurement | done | [phase4_dcir.md](phase4_dcir.md) |
@@ -38,43 +40,66 @@ to an external server.
 
 The 100 mΩ shunt sits directly at the cell's positive terminal, so it carries
 **all** current the cell delivers — both the discharge resistor and the power
-bank / ESP32 supply. VBUS senses the cell's positive terminal directly (Kelvin),
-upstream of the shunt, so the measured voltage is the true cell terminal voltage.
+bank (which feeds the ESP). The ESP is powered through an **isolated DC-DC**, so
+the logic/measurement side has its own ground (GND_MEAS) that is bonded to the
+cell's negative terminal independently of the power bank. This gives true 4-wire
+(Kelvin) sensing of the cell voltage and keeps the load FET safely controllable
+even when the power bank's undervoltage protection trips.
 
-```
-  ┌─────────────┐
-  │  LiIon Cell  │
-  │  under test  │
-  └──┬───────┬──┘
-     │ (Cell+)│ (Cell-)
-     │        │
-     ├──── VBUS sense ──────────────────► INA226 VBUS (true cell voltage)
-     │        │
-  (IN+)       │
-     │        │
- [Shunt 100mΩ]│         ◄── INA226 IN+/IN- measure TOTAL cell current
-     │        │
-  (IN-)       │
-     │        │
-     ●━━ node ━━━━━━━━━━━━━━━━━━━━━━━━┓   │
-     │        │                       │   │
-     ├──┌─────┴──────────┐            │   │
-     │  │  USB Power Bank  │           │   │
-     │  │  PCB (step-up)   │── 5V ── ESP32 VIN
-     │  └─────────────────┘           │   │
-     │                          ┌─────┴───┴┐
-     ├── 13.5Ω (2×27Ω) ── FET ─│  ESP32    │── WiFi ── HTTP GET ── Server
-     │              (~274mA)    │  (I2C +   │
-     │                          │   GPIO)   │
-     │                          └─────┬─────┘
-     │                                │
-     └──────────────── GND ───────────┴──── (Cell-)
+```mermaid
+flowchart TD
+    CELLP["Cell +"]
+    CELLM["Cell minus  -  star / Kelvin point"]:::star
+
+    CELLP -->|"IN+ Kelvin"| SHUNT["Shunt 100 mOhm"]
+    SHUNT --> NODE(("node / IN-"))
+    NODE --> RLOAD["Discharge 13.5 Ohm"]
+    RLOAD --> FET["Load N-FET"]
+    NODE --> PB["Power-bank PCB<br/>UV protection + boost"]
+
+    PB -->|"OUT+ 5 V"| ISO["Isolated DC-DC<br/>galvanic break"]
+    ISO -->|"5 V_iso"| ESP["ESP32"]
+    ESP -->|"3.3 V + I2C"| INA["INA226"]
+    ESP -->|"GPIO 25 + pulldown"| FET
+
+    CELLP -. "VBUS sense" .-> INA
+    SHUNT -. "shunt sense" .-> INA
+
+    FET ==>|"load return"| CELLM
+    PB ==>|"B- return"| CELLM
+    ESP -. "ref ~0 A" .-> CELLM
+    INA -. "GND / V- sense" .-> CELLM
+
+    classDef star fill:#ffdddd,stroke:#990000,stroke-width:2px;
 ```
 
-Note: the discharge-resistor FET source and the power-bank/ESP32 ground all
-return to the common GND (Cell-). The shunt is the single point through which
-the entire cell current flows, so capacity (mAh) and energy (Wh) include the
-ESP32's own consumption.
+Legend: solid arrows = power/signal flow, **heavy arrows (==>)** = high-current
+returns in **GND_PWR**, **dotted arrows (-.->)** = sense/reference lines in
+**GND_MEAS** (carry essentially no current).
+
+### Net table (who connects where)
+
+| Net | Members | Current |
+|---|---|---|
+| **Cell +** | cell positive; shunt IN+; INA226 VBUS sense (Kelvin) | load + supply |
+| **node / IN−** | shunt IN−; discharge-resistor top; power-bank B+ | load + supply |
+| **GND_PWR** | load-FET source; power-bank B− | heavy (load + supply return) |
+| **GND_MEAS** | isolated DC-DC secondary gnd; ESP32 GND; INA226 GND (= V− sense); FET gate pull-down ref | ~0 (INA Iq only) |
+| **Cell −** | star point — GND_PWR and GND_MEAS meet here and **only** here | — |
+
+The isolation barrier is in the power path only: power-bank OUT+/P− (primary)
+↔ isolated DC-DC ↔ 5 V_iso / GND_MEAS (secondary). The power-bank's P− bonds to
+GND_PWR through its internal protection FET; the barrier keeps the ESP supply
+current out of GND_MEAS.
+
+Notes:
+- The shunt is the single point through which the entire cell current flows, so
+  capacity (mAh) and energy (Wh) include the ESP's own consumption.
+- Because GND_MEAS is tied to the cell − independently of the power bank, the
+  load FET's gate and source share the true cell-negative reference; a gate
+  pull-down keeps it **off** if the ESP loses power or hangs (fail-safe).
+- ESP GPIO can drive the FET gate directly (no opto needed), since ESP ground =
+  GND_MEAS = the FET-source reference.
 
 ## File Structure (planned)
 

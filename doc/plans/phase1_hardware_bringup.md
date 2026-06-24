@@ -5,41 +5,89 @@
 Wire up the ESP32 and INA226 on a breadboard, confirm I2C communication,
 and read raw register values from the INA226.
 
+## Grounding Architecture (two domains)
+
+All grounds fan out from a single physical point — the cell's **negative
+terminal** (the Kelvin star point). Two separate grounds start there and
+**meet nowhere else**:
+
+**GND_PWR — power ground (carries the heavy/supply currents):**
+- Discharge FET source (load return, ~274 mA+ through the 13.5 Ω path)
+- Power-bank battery-negative B− (the current the cell delivers to run the
+  boost / ESP)
+- Via the power-bank internals, the power-bank output P− and the isolated
+  DC-DC *primary* ground sit in this domain too (bonded to Cell− through the
+  bank's protection FET)
+
+**GND_MEAS — measurement ground (carries essentially no current):**
+- Isolated DC-DC *secondary* ground (the clean logic ground)
+- ESP32 ground
+- INA226 GND pin (also its bus-voltage reference = low side of the 4-wire
+  cell-voltage sense)
+- FET gate-driver / GPIO reference and the gate pull-down
+
+The **isolated DC-DC** is the only barrier, and it sits in the power path:
+power-bank OUT+/P− (primary) → isolated DC-DC → 5 V_iso / GND_MEAS (secondary).
+Because the barrier blocks DC, the ESP supply current circulates on the
+secondary and returns to the converter — it never flows through the Cell−
+measurement tie. Consequences:
+
+1. **True 4-wire sensing.** GND_MEAS stays at true cell-negative potential
+   (only the INA's ~330 µA quiescent current is in it), so VBUS − GND is the
+   real cell terminal voltage.
+2. **Safe FET control.** GND_MEAS is bonded to Cell− independently of the power
+   bank. When the bank's undervoltage protection trips (or the ESP hangs and
+   the bank then trips on cell voltage), the FET gate (pull-down to GND_MEAS)
+   and source (GND_PWR, also Cell−) stay at the same potential → FET off. No
+   runaway deep-discharge.
+3. **No opto needed.** Since ESP ground = GND_MEAS = the FET-source reference,
+   the ESP GPIO drives the gate directly.
+
+**The one rule:** GND_PWR and GND_MEAS join only at the cell − terminal
+(single-point / star). Never bond them anywhere else, or the supply-current IR
+drop re-enters the voltage reference and the 4-wire benefit is lost.
+
+See the Mermaid diagram and net table in
+[overview.md](overview.md#hardware-block-diagram).
+
 ## Hardware Tasks
 
 1. **Wire INA226 to ESP32 via I2C**
    - SDA → GPIO 21 (default ESP32 I2C)
    - SCL → GPIO 22 (default ESP32 I2C)
    - INA226 VCC → 3.3V from ESP32
-   - INA226 GND → common GND
+   - INA226 GND → **GND_MEAS** (the measurement domain, Kelvin to Cell−)
    - INA226 A0, A1 → GND (I2C address 0x40)
 
-2. **Connect shunt resistor (50 mΩ) between IN+ and IN-**
-   - IN+ goes to the cell positive terminal
-   - IN- goes to the common load node — both the discharge resistor network
-     **and** the USB power bank input connect here
+2. **Connect shunt resistor (100 mΩ) between IN+ and IN−**
+   - IN+ goes to the cell positive terminal (Kelvin)
+   - IN− goes to the common load node — both the discharge resistor network
+     **and** the USB power bank input (B+) connect here
    - This places the shunt at the single point where all cell current flows,
-     so the INA226 measures total cell current (discharge load + ESP32 supply)
+     so the INA226 measures total cell current (discharge load + ESP supply)
 
-3. **Connect VBUS for bus voltage measurement**
-   - VBUS pin → cell positive terminal (separate Kelvin sense wire, on the IN+
-     side, upstream of the shunt)
-   - GND of INA226 is already on common GND
-   - This gives the true cell terminal voltage (VBUS to GND), excluding the
-     shunt's own voltage drop
+3. **Connect VBUS for bus voltage measurement (4-wire)**
+   - VBUS pin → cell positive terminal via a separate Kelvin sense wire
+     (upstream of the shunt)
+   - INA226 GND → cell negative terminal via the GND_MEAS Kelvin tie
+   - VBUS − GND therefore reads the true cell terminal voltage, free of the
+     shunt drop and free of supply-current IR drops
 
-4. **Connect two discharge paths via N-channel MOSFETs**
-   - FET1 gate → GPIO 25 (via 1kΩ gate resistor), drain → R_low, source → GND
-   - FET2 gate → GPIO 26 (via 1kΩ gate resistor), drain → R_high, source → GND
-   - FETs off at startup (GPIOs default LOW)
-   - 10kΩ pull-down on each gate to ensure FETs stay off during ESP32 boot
+4. **Connect the single discharge path via an N-channel MOSFET**
+   - FET gate → GPIO 25 (via 1kΩ gate resistor), drain → 13.5 Ω load,
+     source → **GND_PWR** (heavy load-return wire to Cell−)
+   - 10kΩ pull-down on the gate to GND_MEAS → FET stays off during ESP boot
+     and whenever the ESP loses power or hangs (fail-safe)
 
-5. **Power supply**
-   - USB power bank PCB between the cell and the ESP32
-   - Power bank input → IN- node (downstream of the shunt, **not** directly to
-     the cell), 5V output → ESP32 VIN
-   - This routes the ESP32's supply current through the shunt so it is included
-     in the measurement
+5. **Power supply (isolated)**
+   - USB power bank PCB between the cell and an isolated DC-DC:
+     power-bank input (B+) → IN− node (downstream of the shunt), power-bank
+     B− → GND_PWR
+   - Power-bank 5V output → isolated DC-DC input
+   - Isolated DC-DC output → ESP32 (5 V_iso / GND_MEAS)
+   - This keeps the ESP supply current inside the measurement of the shunt
+     (capacity includes ESP draw) while the isolation breaks the ground so the
+     measurement side references true Cell−
 
 ## Software Tasks
 
@@ -61,7 +109,10 @@ and read raw register values from the INA226.
 - [x] INA226 detected on I2C bus at address 0x40
 - [x] Manufacturer and die ID read correctly
 - [x] Serial output shows register values
-- [x] FET GPIOs confirmed LOW at boot (no unwanted discharge)
+- [x] FET GPIO confirmed LOW at boot (no unwanted discharge)
+- [ ] Isolated DC-DC in place; GND_PWR and GND_MEAS joined only at Cell−
+- [ ] 4-wire cell-voltage reading confirmed (matches a DMM at the terminals)
+- [ ] FET stays off when the power-bank protection trips / ESP loses power
 
 ## Resistor Value
 

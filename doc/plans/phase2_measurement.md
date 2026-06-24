@@ -45,7 +45,7 @@ CAL = 0.00512 / (0.00005 × 0.1) = 1024
 
 ## Calibration Procedure
 
-1. No load (FETs off): read voltage, compare to multimeter on cell terminals
+1. No load (FET off): read voltage, compare to multimeter on cell terminals
 2. Known load (external precision resistor): read current, compare to multimeter in series
 3. Adjust shunt value in software if systematic offset exists
 4. Document calibration offset in `config.h`
