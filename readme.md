@@ -36,4 +36,4 @@ See [doc/plans/overview.md](doc/plans/overview.md) for the detailed development 
 
 ## Measurement Reports
 
-- [DCIR report 2026-06-24](doc/reports/dcir_report_20260624_093034.html) — 5× DCIR measurements, mean 96.1 mOhm, spread 2.5 mOhm
+- [DCIR report 2026-06-24](https://uhi22.github.io/accucheck2/doc/reports/dcir_report_20260624_093034.html) — 5× DCIR measurements, mean 96.1 mOhm, spread 2.5 mOhm
