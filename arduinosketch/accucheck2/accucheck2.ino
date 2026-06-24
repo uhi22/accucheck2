@@ -5,6 +5,20 @@
 #include "ina226.h"
 #include "discharge.h"
 #include "dcir.h"
+#include "logger.h"
+
+static float lastRI_mOhm = 0;
+static unsigned long lastDcirTime_ms = 0;
+static unsigned long autoStartCheckTime_ms = 0;
+
+#define DCIR_INTERVAL_MS   120000   /* 2 minutes */
+#define AUTOSTART_SETTLE_MS 3000    /* voltage must be stable for 3s */
+#define AUTOSTART_V_MIN    3000     /* mV */
+#define AUTOSTART_V_MAX    4250     /* mV */
+
+static int16_t autoStartVoltage = 0;
+static unsigned long autoStartStableTime = 0;
+static bool autoStartEnabled = true;
 
 void scanI2C() {
   Serial.println("Scanning I2C bus...");
@@ -60,6 +74,7 @@ void setup() {
   Serial.println("INA226 configured.");
 
   dischargeInit();
+  loggerInit();
 
   Serial.println("READY");
   Serial.println("Commands: start / stop / status / reset / dcir");
@@ -71,9 +86,11 @@ void handleCommand(String cmd) {
   cmd.trim();
   if (cmd == "start") {
     dischargeStart();
+    lastDcirTime_ms = millis();
     Serial.println("t_s\tV_mV\tI_mA\tcap_mAh\te_mWh");
   } else if (cmd == "stop") {
     dischargeStop();
+    autoStartEnabled = false;
   } else if (cmd == "status") {
     Serial.print("State: ");
     Serial.println(dischargeGetStateStr());
@@ -93,6 +110,7 @@ void handleCommand(String cmd) {
     DcirResult result;
     dcirMeasure(result);
     if (result.valid) {
+      lastRI_mOhm = result.ri_mOhm;
       Serial.print("R_i = ");
       Serial.print(result.ri_mOhm, 1);
       Serial.println(" mOhm");
@@ -118,10 +136,49 @@ void handleCommand(String cmd) {
     }
   } else if (cmd == "reset") {
     dischargeInit();
+    autoStartEnabled = false;
     Serial.println("Reset to IDLE.");
   } else {
     Serial.print("Unknown command: ");
     Serial.println(cmd);
+  }
+}
+
+static void runDcirAndLog() {
+  Serial.println("Running periodic DCIR...");
+  DcirResult result;
+  dcirMeasure(result);
+  if (result.valid) {
+    lastRI_mOhm = result.ri_mOhm;
+    Serial.print("R_i = ");
+    Serial.print(result.ri_mOhm, 1);
+    Serial.println(" mOhm");
+  } else {
+    Serial.println("DCIR measurement failed.");
+  }
+}
+
+static void checkAutoStart() {
+  if (!autoStartEnabled) return;
+  unsigned long now = millis();
+  if (now - autoStartCheckTime_ms < 1000) return;
+  autoStartCheckTime_ms = now;
+
+  int16_t v = ina226ReadBusVoltage_mV();
+  if (v >= AUTOSTART_V_MIN && v <= AUTOSTART_V_MAX) {
+    if (autoStartVoltage == 0 || abs(v - autoStartVoltage) > 50) {
+      autoStartVoltage = v;
+      autoStartStableTime = now;
+    } else if (now - autoStartStableTime >= AUTOSTART_SETTLE_MS) {
+      Serial.println("Cell detected, auto-starting...");
+      runDcirAndLog();
+      dischargeStart();
+      Serial.println("t_s\tV_mV\tI_mA\tcap_mAh\te_mWh");
+      lastDcirTime_ms = millis();
+    }
+  } else {
+    autoStartVoltage = 0;
+    autoStartStableTime = 0;
   }
 }
 
@@ -138,5 +195,43 @@ void loop() {
     }
   }
 
-  dischargeTick();
+  DischargeState ds = dischargeGetState();
+  if (ds == STATE_IDLE) {
+    checkAutoStart();
+  } else if (ds == STATE_DONE || ds == STATE_ERROR) {
+    autoStartEnabled = false;
+  }
+
+  if (dischargeTick()) {
+    MeasurementData data;
+    data.timestamp_s = dischargeGetElapsedSeconds();
+    data.voltage_mV = dischargeGetLastVoltage_mV();
+    data.current_mA = dischargeGetLastCurrent_mA();
+    data.capacity_mAh = dischargeGetCapacity_mAh();
+    data.energy_mWh = dischargeGetEnergy_mWh();
+    data.ri_mOhm = 0; /* only sent in dedicated "dcir" data points, to avoid repeating stale values */
+    data.state = dischargeGetStateStr();
+    loggerSend(data);
+
+    /* Periodic DCIR every 2 minutes during discharge */
+    unsigned long now = millis();
+    if (now - lastDcirTime_ms >= DCIR_INTERVAL_MS) {
+      lastDcirTime_ms = now;
+      runDcirAndLog();
+      /* Re-enable FET after DCIR (dcirMeasure leaves it off) */
+      digitalWrite(FET_PIN, HIGH);
+      /* Log the DCIR result as a data point too */
+      MeasurementData dcirData;
+      dcirData.timestamp_s = dischargeGetElapsedSeconds();
+      dcirData.voltage_mV = dischargeGetLastVoltage_mV();
+      dcirData.current_mA = dischargeGetLastCurrent_mA();
+      dcirData.capacity_mAh = dischargeGetCapacity_mAh();
+      dcirData.energy_mWh = dischargeGetEnergy_mWh();
+      dcirData.ri_mOhm = lastRI_mOhm;
+      dcirData.state = "dcir";
+      loggerSend(dcirData);
+    }
+  }
+
+  loggerTick();
 }

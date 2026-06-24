@@ -29,9 +29,9 @@ to an external server.
 | 3 | Discharge control & capacity test | partial | [phase3_discharge_control.md](phase3_discharge_control.md) |
 | 4 | DCIR measurement | done | [phase4_dcir.md](phase4_dcir.md) |
 | 4b | DCIR measurement tooling | done | [phase4b_dcir_tooling.md](phase4b_dcir_tooling.md) |
-| 5 | WiFi & HTTP logging | open | [phase5_wifi_logging.md](phase5_wifi_logging.md) |
-| 6 | PHP server & visualization | open | [phase6_server.md](phase6_server.md) |
-| 7 | Integration & test automation | open | [phase7_integration.md](phase7_integration.md) |
+| 5 | WiFi & HTTP logging | done | [phase5_wifi_logging.md](phase5_wifi_logging.md) |
+| 6 | PHP server & visualization | done | [phase6_server.md](phase6_server.md) |
+| 7 | Further improvements | open | [phase7_integration.md](phase7_integration.md) |
 | 8 | (Optional) PCB design | open | [phase8_pcb.md](phase8_pcb.md) |
 
 ## Hardware Block Diagram

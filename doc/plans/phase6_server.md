@@ -42,10 +42,13 @@ Called by ESP32:
 GET /add.php?key=<secret>&t=120&v=3742&i=985&cap=328&ri=42&e=1215&state=discharging
 ```
 
+The first request after an ESP32 boot includes `&new=1` to trigger creation of a new
+log file. This ensures each power cycle / reboot starts a fresh file.
+
 Logic:
 1. Read GET parameters (t, v, i, cap, ri, e, state)
 2. Validate: all numeric except state, state must be in allowed list
-3. If no active log file or state=`idle` with t=0: create new file with header
+3. If no active log file or `new=1`: create new file with header
 4. Append semicolon-separated line to current log file
 5. If `state=dcir`: also parse `samples` parameter (comma-separated `t_ms:v:i` triples),
    write each sample as a separate line to a DCIR detail file (`dcir_<timestamp>.txt`)
@@ -79,10 +82,12 @@ Single HTML page showing:
 1. **Voltage vs. Time** — line chart (discharge overview)
 2. **Current vs. Time** — line chart (discharge overview)
 3. **Capacity vs. Time** — line chart (mAh accumulated)
-4. **Status bar** — current state, last voltage, last current, elapsed time
-5. **DCIR result** — displayed as a number (mΩ), updated when a new DCIR value arrives
-6. **DCIR detail chart** — voltage and current vs. time during the DCIR sequence (ms resolution), showing the load step and voltage drop
-7. **Log file selector** — dropdown to view past test runs
+4. **Energy vs. Time** — line chart (mWh accumulated)
+5. **R_i vs. Time** — line chart (DCIR measurements over the discharge)
+6. **Status bar** — current state, last voltage, last current, elapsed time
+7. **DCIR result** — displayed as a number (mΩ), updated when a new DCIR value arrives
+8. **DCIR detail chart** — voltage and current vs. time during the DCIR sequence (ms resolution), showing the load step and voltage drop
+9. **Log file selector** — dropdown to view past test runs
 
 Auto-refreshing: page polls `data.php?since=N` every 10 seconds and appends new points to charts.
 
@@ -126,11 +131,11 @@ Deploy by uploading `webspace/` contents to the web space.
 
 ## Acceptance Criteria
 
-- [ ] `add.php` receives GET request and appends data to log file
-- [ ] Log file contains correct semicolon-separated data with header
-- [ ] `data.php` returns valid JSON with correct data
-- [ ] `data.php?since=N` returns only new rows (incremental update)
-- [ ] `index.php` shows live-updating charts during discharge test
+- [x] `add.php` receives GET request and appends data to log file
+- [x] Log file contains correct semicolon-separated data with header
+- [x] `data.php` returns valid JSON with correct data
+- [x] `data.php?since=N` returns only new rows (incremental update)
+- [x] `index.php` shows live-updating charts during discharge test
 - [ ] Past test runs viewable via log file selector
 - [ ] Invalid/malformed requests are rejected, no file corruption
-- [ ] Works on standard shared hosting (PHP 7.4+, no special extensions)
+- [x] Works on standard shared hosting (PHP 7.4+, no special extensions)

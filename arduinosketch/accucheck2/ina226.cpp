@@ -10,24 +10,24 @@
 #define REG_CALIBRATION 0x05
 #define REG_MASK_ENABLE 0x06
 
-// Config register bits:
-// Averaging 64 samples = 011 (bits 11:9)
-// Bus voltage conversion 1.1ms = 100 (bits 8:6)
-// Shunt voltage conversion 1.1ms = 100 (bits 5:3)
-// Mode: continuous shunt + bus = 111 (bits 2:0)
-#define CONFIG_NORMAL 0x4127  // 0b0100_0001_0010_0111
+/* Config register bits:
+   Averaging 64 samples = 011 (bits 11:9)
+   Bus voltage conversion 1.1ms = 100 (bits 8:6)
+   Shunt voltage conversion 1.1ms = 100 (bits 5:3)
+   Mode: continuous shunt + bus = 111 (bits 2:0) */
+#define CONFIG_NORMAL 0x4127  /* 0b0100_0001_0010_0111 */
 
-// Fast config for DCIR:
-// Averaging 16 samples = 010 (bits 11:9)
-// Bus voltage conversion 332µs = 010 (bits 8:6)
-// Shunt voltage conversion 332µs = 010 (bits 5:3)
-// Mode: continuous shunt + bus = 111 (bits 2:0)
-#define CONFIG_FAST 0x4497  // 0b0100_0100_1001_0111
+/* Fast config for DCIR:
+   Averaging 16 samples = 010 (bits 11:9)
+   Bus voltage conversion 332us = 010 (bits 8:6)
+   Shunt voltage conversion 332us = 010 (bits 5:3)
+   Mode: continuous shunt + bus = 111 (bits 2:0) */
+#define CONFIG_FAST 0x4497  /* 0b0100_0100_1001_0111 */
 
-// CAL = 0.00512 / (current_LSB * R_shunt)
-// current_LSB = 50 µA = 0.00005 A
-// R_shunt = 100 mΩ = 0.1 Ω
-// CAL = 0.00512 / (0.00005 * 0.1) = 1024
+/* CAL = 0.00512 / (current_LSB * R_shunt)
+   current_LSB = 50 uA = 0.00005 A
+   R_shunt = 100 mOhm = 0.1 Ohm
+   CAL = 0.00512 / (0.00005 * 0.1) = 1024 */
 #define CAL_VALUE 1024
 
 static void writeRegister(uint8_t reg, uint16_t val) {
@@ -61,7 +61,7 @@ void ina226ConfigNormal() {
 }
 
 int16_t ina226ReadBusVoltage_mV() {
-  // Bus voltage register: unsigned, LSB = 1.25 mV
+  /* Bus voltage register: unsigned, LSB = 1.25 mV */
   uint16_t raw = readRegister(REG_BUS_V);
   return (int16_t)((raw * 125L) / 100);
 }
@@ -72,7 +72,7 @@ float ina226ReadBusVoltage_mV_f() {
 }
 
 int16_t ina226ReadCurrent_mA() {
-  // Current register: signed, LSB = current_LSB = 50 µA = 0.05 mA
+  /* Current register: signed, LSB = current_LSB = 50 uA = 0.05 mA */
   int16_t raw = (int16_t)readRegister(REG_CURRENT);
   return (int16_t)((raw * 50L) / 1000);
 }
@@ -83,12 +83,12 @@ float ina226ReadCurrent_mA_f() {
 }
 
 int16_t ina226ReadPower_mW() {
-  // Power register: unsigned, LSB = 25 * current_LSB = 25 * 50 µA = 1.25 mW
+  /* Power register: unsigned, LSB = 25 * current_LSB = 25 * 50 uA = 1.25 mW */
   uint16_t raw = readRegister(REG_POWER);
   return (int16_t)((raw * 125L) / 100);
 }
 
 bool ina226IsConversionReady() {
   uint16_t mask = readRegister(REG_MASK_ENABLE);
-  return (mask & 0x0008) != 0;  // CVRF bit
+  return (mask & 0x0008) != 0;  /* CVRF bit */
 }

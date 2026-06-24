@@ -74,34 +74,34 @@ static void finishError(const char* reason) {
   Serial.println(reason);
 }
 
-void dischargeTick() {
-  if (state != STATE_DISCHARGING) return;
+bool dischargeTick() {
+  if (state != STATE_DISCHARGING) return false;
 
   unsigned long now = millis();
-  if (lastTick_ms != 0 && (now - lastTick_ms) < MEASURE_INTERVAL_MS) return;
+  if (lastTick_ms != 0 && (now - lastTick_ms) < MEASURE_INTERVAL_MS) return false;
   lastTick_ms = now;
 
-  if (!ina226IsConversionReady()) return;
+  if (!ina226IsConversionReady()) return false;
 
   int16_t voltage = ina226ReadBusVoltage_mV();
   int16_t current = ina226ReadCurrent_mA();
 
-  // Safety checks
+  /* Safety checks */
   if (voltage == 0) {
     finishError("voltage 0 - cell disconnected?");
-    return;
+    return false;
   }
   if (current > 2000) {
     finishError("overcurrent");
-    return;
+    return false;
   }
   uint32_t elapsed = (now - startTime_ms) / 1000;
   if (elapsed > MAX_DISCHARGE_TIME_S) {
     finishError("max discharge time exceeded");
-    return;
+    return false;
   }
 
-  // Integrate capacity and energy (trapezoidal)
+  /* Integrate capacity and energy (trapezoidal) */
   if (prevTime_ms != startTime_ms || prevCurrent_mA != 0) {
     float dt_hours = (now - prevTime_ms) / 3600000.0f;
     capacity_mAh += (prevCurrent_mA + current) / 2.0f * dt_hours;
@@ -114,7 +114,7 @@ void dischargeTick() {
   prevVoltage_mV = voltage;
   prevTime_ms = now;
 
-  // Serial report
+  /* Serial report */
   Serial.print(elapsed);
   Serial.print("\t");
   Serial.print(voltage);
@@ -125,10 +125,11 @@ void dischargeTick() {
   Serial.print("\t");
   Serial.println(energy_mWh, 1);
 
-  // Cutoff check (after reporting, so we see the last value)
+  /* Cutoff check (after reporting, so we see the last value) */
   if (voltage < V_CUTOFF_MV) {
     finishDone();
   }
+  return true;
 }
 
 DischargeState dischargeGetState() {
@@ -156,4 +157,12 @@ float dischargeGetEnergy_mWh() {
 uint32_t dischargeGetElapsedSeconds() {
   if (state == STATE_IDLE && startTime_ms == 0) return 0;
   return (millis() - startTime_ms) / 1000;
+}
+
+int16_t dischargeGetLastVoltage_mV() {
+  return prevVoltage_mV;
+}
+
+int16_t dischargeGetLastCurrent_mA() {
+  return prevCurrent_mA;
 }

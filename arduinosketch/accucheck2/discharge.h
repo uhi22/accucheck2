@@ -13,11 +13,13 @@ enum DischargeState {
 void dischargeInit();
 void dischargeStart();
 void dischargeStop();
-void dischargeTick();
+bool dischargeTick();
 DischargeState dischargeGetState();
 const char* dischargeGetStateStr();
 float dischargeGetCapacity_mAh();
 float dischargeGetEnergy_mWh();
 uint32_t dischargeGetElapsedSeconds();
+int16_t dischargeGetLastVoltage_mV();
+int16_t dischargeGetLastCurrent_mA();
 
 #endif

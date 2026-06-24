@@ -1,9 +1,25 @@
-# Phase 7 — Integration & Test Automation
+# Phase 7 — Further Improvements
 
 ## Goal
 
-Combine all modules into a complete test flow, add user control via Serial
-commands, and validate the full system end-to-end.
+Bring the device to a standalone, fully-featured state: auto-start on cell
+connection, periodic DCIR during discharge, additional web page charts,
+and DCIR detail visualization.
+
+## Auto-Start
+
+The device shall start the discharge measurement automatically when a cell is
+connected — no serial command or button required. Detection logic:
+
+1. On boot (or when in IDLE), periodically read the cell voltage
+2. If voltage is in the valid LiIon range (e.g. 3000–4250 mV) and stable for
+   a few seconds, auto-start the discharge
+3. Run an initial DCIR measurement before starting the discharge
+4. Serial commands (`stop`, `status`, `dcir`, `reset`) remain available for
+   manual override
+
+This makes the device usable as a standalone tool — just plug in a cell and
+watch the results on the web page.
 
 ## Main Loop Architecture
 
@@ -11,14 +27,14 @@ commands, and validate the full system end-to-end.
 setup()
   ├── init Serial (115200 baud)
   ├── init I2C + INA226
-  ├── init FET GPIOs (LOW)
+  ├── init FET GPIO (LOW)
   ├── init WiFi
   └── print "READY"
 
 loop()
   ├── check Serial for commands
   ├── state machine tick
-  │   ├── IDLE: do nothing, wait for command
+  │   ├── IDLE: monitor voltage, auto-start when cell detected
   │   ├── DISCHARGING: measure, integrate, log, check cutoff
   │   ├── DCIR: run DCIR sequence
   │   ├── DONE: report final results
@@ -30,8 +46,7 @@ loop()
 
 | Command | Action |
 |---|---|
-| `start low` | Start discharge at ~0.5A |
-| `start high` | Start discharge at ~1A |
+| `start` | Start discharge manually |
 | `stop` | Stop discharge, report results |
 | `dcir` | Run single DCIR measurement |
 | `status` | Print current voltage, current, state |
@@ -39,8 +54,14 @@ loop()
 
 ## Full Discharge Test Flow
 
-1. User sends `start high`
-2. ESP32 enters DISCHARGING state
+1. Cell connected, auto-detected (or user sends `start`)
+2. Initial DCIR measurement
+3. ESP32 enters DISCHARGING state
+4. Every 2 minutes: pause discharge, run DCIR, resume discharge
+   - FET off → DCIR measurement (~3s) → FET on
+   - Capacity/energy integration continues correctly: during the DCIR pause
+     the current drops to quiescent level, which is still measured and integrated
+     (no gap in the trapezoidal integration, just lower current during the pause)
 3. Every 10 seconds:
    - Read voltage + current
    - Integrate capacity
@@ -52,36 +73,37 @@ loop()
 
 ## Test Scenarios
 
-### Test 1: Basic measurement
-- Connect charged cell, send `status`
-- Verify voltage reads ~4.1V, current reads ~0 mA
+### Test 1: Auto-start
+- Connect charged cell, verify auto-detection and discharge start
+- Verify initial DCIR measurement runs before discharge begins
 
-### Test 2: Discharge low
-- Send `start low`, let run for 60 seconds
-- Verify current ~0.5A, voltage dropping
-- Send `stop`, verify capacity > 0
-
-### Test 3: Discharge high to cutoff
-- Send `start high`, let run until cutoff
+### Test 2: Full discharge to cutoff
+- Let auto-started discharge run until cutoff
 - Verify final capacity matches cell rating (±10%)
 
-### Test 4: DCIR standalone
-- Send `dcir`, verify R_i result is plausible
+### Test 3: Manual control
+- Send `stop` during discharge, verify it stops
+- Send `start`, verify it resumes with fresh counters
+- Send `dcir`, verify standalone DCIR works
 
-### Test 5: WiFi logging
-- Run test 2 while monitoring server
-- Verify all measurements arrive
+### Test 4: WiFi logging
+- Run discharge while monitoring web page
+- Verify all measurements arrive and charts update live
 
-### Test 6: WiFi dropout recovery
+### Test 5: WiFi dropout recovery
 - Start discharge, disconnect WiFi AP, reconnect
 - Verify measurements resume after reconnect
 - Verify Serial logging continued during dropout
 
 ## Acceptance Criteria
 
+- [ ] Auto-start: discharge begins automatically when cell is connected
+- [ ] Periodic DCIR every 2 minutes during discharge
+- [ ] Web page: energy vs. time chart
+- [ ] Web page: R_i vs. time chart
+- [ ] Web page: DCIR detail chart (fast-sampled voltage/current during load step)
+- [ ] ESP32 sends DCIR samples batch via HTTP GET
+- [ ] Stop discharge on HTTP error or WiFi unreachable
 - [ ] Full discharge test runs unattended to completion
-- [ ] All Serial commands work as specified
-- [ ] HTTP logging captures complete discharge curve
 - [ ] Capacity result within 10% of cell datasheet rating
 - [ ] No crashes or watchdog resets during multi-hour tests
-- [ ] DCIR results logged at multiple SOC points (if enabled)

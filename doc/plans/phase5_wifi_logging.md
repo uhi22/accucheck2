@@ -72,8 +72,8 @@ the Serial output can be used to verify that the HTTP requests are being built c
 
 ## Acceptance Criteria
 
-- [ ] ESP32 connects to WiFi within 10 seconds
-- [ ] HTTP GET received by server with correct parameters
-- [ ] Measurement loop not blocked by slow/failed HTTP requests
-- [ ] Data still logged to Serial when WiFi is unavailable
+- [x] ESP32 connects to WiFi within 10 seconds
+- [x] HTTP GET received by server with correct parameters
+- [x] Measurement loop not blocked by slow/failed HTTP requests (ring buffer, non-blocking)
+- [x] Data still logged to Serial when WiFi is unavailable
 - [ ] Auto-reconnect works after WiFi dropout
