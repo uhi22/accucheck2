@@ -1,5 +1,7 @@
 # accucheck2
 
+![Test setup](doc/2026-06-26_testsetup.jpg)
+
 ESP32-based LiIon single-cell tester for capacity (mAh), energy (Wh) and DC internal resistance (mΩ).
 
 **Status:** Phases 2–6 complete (measurement, discharge, DCIR, WiFi logging, PHP server & live web visualization). Hardware grounding/isolation rework (phase 1) and further improvements (phase 7) in progress. See [doc/plans/overview.md](doc/plans/overview.md) for the roadmap.
