@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>accucheck2 — Live Monitor</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3"></script>
 <style>
   body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
   h1 { color: #333; }
@@ -58,11 +59,30 @@
     <select id="dcirSelect" onchange="dcirPick()"></select>
     <button onclick="dcirStep(-1)">Newer &rarr;</button>
   </div>
+  <div id="dcirCalc" style="font-size:14px;color:#333;margin-bottom:8px;">R_i: &mdash;</div>
   <canvas id="chartDcirDetail"></canvas>
 </div>
 
 <script>
 const COL = { T:0, V:1, I:2, CAP:3, RI:4, E:5, STATE:6 };
+
+Chart.register(window['chartjs-plugin-annotation']);
+
+/* sample indices used for the DCIR calculation (set per selected file) */
+let dcirRestSet = new Set();
+let dcirLoadSet = new Set();
+function dcirPointRadius(ctx) {
+  const k = ctx.dataIndex;
+  return (dcirRestSet.has(k) || dcirLoadSet.has(k)) ? 6 : 1;
+}
+function dcirPointColor(base) {
+  return (ctx) => {
+    const k = ctx.dataIndex;
+    if (dcirRestSet.has(k)) return 'seagreen';
+    if (dcirLoadSet.has(k)) return 'darkorange';
+    return base;
+  };
+}
 
 let currentFile = null;
 let fetchedLines = 0;
@@ -95,8 +115,10 @@ const allCharts = [chartV, chartI, chartC, chartE, chartR];
 const chartDcirDetail = new Chart(document.getElementById('chartDcirDetail'), {
   type: 'line',
   data: { datasets: [
-    { label: 'Voltage (mV)', data: [], borderColor: 'royalblue', borderWidth: 2, pointRadius: 1, yAxisID: 'y' },
-    { label: 'Current (mA)', data: [], borderColor: 'crimson', borderWidth: 2, pointRadius: 1, yAxisID: 'y1' }
+    { label: 'Voltage (mV)', data: [], borderColor: 'royalblue', borderWidth: 2,
+      pointRadius: dcirPointRadius, pointBackgroundColor: dcirPointColor('royalblue'), yAxisID: 'y' },
+    { label: 'Current (mA)', data: [], borderColor: 'crimson', borderWidth: 2,
+      pointRadius: dcirPointRadius, pointBackgroundColor: dcirPointColor('crimson'), yAxisID: 'y1' }
   ]},
   options: {
     responsive: true,
@@ -105,7 +127,8 @@ const chartDcirDetail = new Chart(document.getElementById('chartDcirDetail'), {
       x: { type: 'linear', title: { display: true, text: 'Time (ms)' } },
       y: { position: 'left', title: { display: true, text: 'Voltage (mV)' } },
       y1: { position: 'right', title: { display: true, text: 'Current (mA)' }, grid: { drawOnChartArea: false } }
-    }
+    },
+    plugins: { annotation: { annotations: {} } }
   }
 });
 
@@ -179,9 +202,63 @@ function renderDcir(filename) {
       dcirShownFile = data.file;
       chartDcirDetail.data.datasets[0].data = data.t_ms.map((t, idx) => ({ x: t, y: data.v[idx] }));
       chartDcirDetail.data.datasets[1].data = data.t_ms.map((t, idx) => ({ x: t, y: data.i[idx] }));
+      computeDcir(data);
       chartDcirDetail.update();
     })
     .catch(err => console.error('DCIR detail error:', err));
+}
+
+function mean(arr, from, count) {
+  let s = 0;
+  for (let k = from; k < from + count; k++) s += arr[k];
+  return s / count;
+}
+
+function hLine(scaleID, value, color, text, pos) {
+  return {
+    type: 'line', scaleID: scaleID, value: value,
+    borderColor: color, borderWidth: 1, borderDash: [6, 4],
+    label: { display: true, content: text, position: pos,
+             backgroundColor: color, color: '#fff', font: { size: 10 }, padding: 3 }
+  };
+}
+
+/* Recompute R_i from the selected high-speed samples, mirroring the firmware:
+   rest = last 5 of the 20-sample rest block (idx 15-19),
+   load = last 5 of the 20-sample load block (idx 35-39). See dcir.cpp. */
+function computeDcir(data) {
+  const info = document.getElementById('dcirCalc');
+  const n = data.t_ms.length;
+  dcirRestSet = new Set();
+  dcirLoadSet = new Set();
+  chartDcirDetail.options.plugins.annotation.annotations = {};
+  if (n < 40) {
+    info.innerHTML = 'R_i: &mdash; (not enough samples)';
+    return;
+  }
+  const restFrom = 15, loadFrom = 35, win = 5;
+  const vRest = mean(data.v, restFrom, win);
+  const iRest = mean(data.i, restFrom, win);
+  const vLoad = mean(data.v, loadFrom, win);
+  const iLoad = mean(data.i, loadFrom, win);
+  for (let k = restFrom; k < restFrom + win; k++) dcirRestSet.add(k);
+  for (let k = loadFrom; k < loadFrom + win; k++) dcirLoadSet.add(k);
+
+  const dV = vRest - vLoad;
+  const dI = iLoad - iRest;
+  const ri = dV * 1000 / dI;
+
+  info.innerHTML = 'R_i = <b>' + ri.toFixed(1) + ' m&Omega;</b>'
+    + ' &nbsp; (V_rest ' + vRest.toFixed(0) + ' &rarr; V_load ' + vLoad.toFixed(0)
+    + ' mV, &Delta;V ' + dV.toFixed(1) + ' mV; &nbsp; I_rest ' + iRest.toFixed(0)
+    + ' &rarr; I_load ' + iLoad.toFixed(0) + ' mA, &Delta;I ' + dI.toFixed(0) + ' mA)';
+
+  chartDcirDetail.options.plugins.annotation.annotations = {
+    vRest: hLine('y',  vRest, 'seagreen',   'V_rest ' + vRest.toFixed(0) + ' mV', 'start'),
+    vLoad: hLine('y',  vLoad, 'darkorange', 'V_load ' + vLoad.toFixed(0) + ' mV (ΔV ' + dV.toFixed(1) + ')', 'start'),
+    iRest: hLine('y1', iRest, 'seagreen',   'I_rest ' + iRest.toFixed(0) + ' mA', 'end'),
+    iLoad: hLine('y1', iLoad, 'darkorange', 'I_load ' + iLoad.toFixed(0) + ' mA (ΔI ' + dI.toFixed(0) + ')', 'end')
+  };
 }
 
 function updateDcirSelect() {
