@@ -12,6 +12,31 @@ if (!isset($_GET['key']) || $_GET['key'] !== $SHARED_SECRET) {
     exit;
 }
 
+// Diagnostic / connectivity-health record. Stored separately from the
+// measurement log; the server adds its own wall-clock receive time so the data
+// stays meaningful across device reboots (which reset the device uptime).
+if (isset($_GET['diag'])) {
+    $DIAG_FILE = $DATA_DIR . '/diag.txt';
+    $num = function ($k) { return isset($_GET[$k]) && is_numeric($_GET[$k]) ? intval($_GET[$k]) : 0; };
+    $up      = $num('up');
+    $rssi    = $num('rssi');
+    $heap    = $num('heap');
+    $minheap = $num('minheap');
+    $ok      = $num('ok');
+    $err     = $num('err');
+    $reconn  = $num('reconn');
+    $reassoc = $num('reassoc');
+    $reset   = isset($_GET['reset']) ? preg_replace('/[^A-Za-z0-9_]/', '', $_GET['reset']) : '';
+    if (!file_exists($DIAG_FILE)) {
+        file_put_contents($DIAG_FILE,
+            "recv_time;uptime_s;rssi_dbm;free_heap;min_heap;http_ok;http_err;wifi_reconn;wifi_reassoc;reset_reason\n");
+    }
+    $line = date('Y-m-d H:i:s') . ";$up;$rssi;$heap;$minheap;$ok;$err;$reconn;$reassoc;$reset\n";
+    file_put_contents($DIAG_FILE, $line, FILE_APPEND | LOCK_EX);
+    echo "OK";
+    exit;
+}
+
 // Read and validate parameters
 $t     = isset($_GET['t'])     ? $_GET['t']     : null;
 $v     = isset($_GET['v'])     ? $_GET['v']     : null;

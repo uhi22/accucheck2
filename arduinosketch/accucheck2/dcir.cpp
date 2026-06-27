@@ -61,18 +61,18 @@ void dcirMeasure(DcirResult &result) {
   float dV = result.v_rest_mV - result.v_load_mV;
   float dI = result.i_load_mA - result.i_rest_mA;
 
-  if (dI < 100.0f) {
-    Serial.println("DCIR: current delta too small (<100 mA)");
+  if (dI < DCIR_MIN_DI_MA) {
+    Serial.println("DCIR: current delta too small");
     return;
   }
-  if (dV < 5.0f) {
-    Serial.println("DCIR: voltage drop too small (<5 mV)");
+  if (dV < DCIR_MIN_DV_MV) {
+    Serial.println("DCIR: voltage drop too small");
     return;
   }
 
   result.ri_mOhm = dV * 1000.0f / dI;
 
-  if (result.ri_mOhm < 10.0f || result.ri_mOhm > 500.0f) {
+  if (result.ri_mOhm < DCIR_RI_MIN_MOHM || result.ri_mOhm > DCIR_RI_MAX_MOHM) {
     Serial.print("DCIR: result out of plausible range: ");
     Serial.print(result.ri_mOhm, 1);
     Serial.println(" mOhm");

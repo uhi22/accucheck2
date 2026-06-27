@@ -35,6 +35,7 @@
 <div class="controls">
   <label>Log file: <select id="fileSelect" onchange="switchFile()"></select></label>
   <span class="auto-refresh" id="refreshInfo">Auto-refresh: active</span>
+  <a href="diag.php" style="margin-left:auto;font-size:13px;">Connectivity diagnostics &rarr;</a>
 </div>
 
 <div class="status-bar" id="statusBar">

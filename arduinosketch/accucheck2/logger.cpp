@@ -3,9 +3,13 @@
 #include <HTTPClient.h>
 #include "config.h"
 #include "logger.h"
+#include "watchdog.h"
 
 #define BUFFER_SIZE 10
 #define HTTP_TIMEOUT_MS 5000
+/* Max buffered points to flush per loggerTick(). Bounds one loop() iteration to
+   FLUSH_MAX_PER_TICK * HTTP_TIMEOUT_MS well under the watchdog timeout. */
+#define FLUSH_MAX_PER_TICK 3
 
 /* Connectivity watchdog: when unsent data is piling up (WiFi down or HTTP
    persistently failing, e.g. "HTTP error: -1"), first try to recover on the
@@ -16,6 +20,10 @@
 #define CONN_RECOVER_EVERY_MS 20000   /* but not more often than every 20 s */
 #define CONN_HARD_RESET_MS    120000  /* full reset after 2 min still failing */
 
+/* Connectivity-health telemetry: send a compact diagnostic record to the server
+   every DIAG_INTERVAL_MS so network stability can be tracked on the website. */
+#define DIAG_INTERVAL_MS      60000
+
 static MeasurementData buffer[BUFFER_SIZE];
 static uint8_t bufHead = 0;
 static uint8_t bufCount = 0;
@@ -23,6 +31,15 @@ static unsigned long lastReconnectAttempt = 0;
 static bool firstRequest = true;
 static unsigned long lastOkMs = 0;       /* last successful HTTP 200 */
 static unsigned long lastRecoverMs = 0;  /* last forced re-association */
+static unsigned long lastDiagMs = 0;     /* last diagnostic record sent */
+
+/* Connectivity-health counters (cumulative since boot; reset by a reboot, which
+   is itself visible via the uptime field dropping back to ~0). */
+static uint32_t httpOkCount = 0;
+static uint32_t httpErrCount = 0;
+static uint32_t wifiReconnectCount = 0;  /* full WiFi.begin() after a disconnect */
+static uint32_t wifiReassocCount = 0;    /* forced re-association by the watchdog */
+static const char* resetReasonStr = "UNKNOWN";  /* set once at boot by the sketch */
 
 static bool sendHttp(const MeasurementData &data) {
   HTTPClient http;
@@ -43,13 +60,23 @@ static bool sendHttp(const MeasurementData &data) {
   }
 
   http.setTimeout(HTTP_TIMEOUT_MS);
+  /* setTimeout() only bounds the stream read. Without an explicit connect
+     timeout, a GET to an unreachable server (WiFi still associated, but the
+     host/internet down) blocks ~19 s on the TCP connect - and several such
+     calls in one loop() iteration trip the 30 s task watchdog. */
+  http.setConnectTimeout(HTTP_TIMEOUT_MS);
   http.begin(url);
   int code = http.GET();
   http.end();
+  /* The GET above can block up to HTTP_TIMEOUT_MS; refresh the watchdog so
+     stacked sends within a single loop() iteration cannot starve it. */
+  watchdogFeed();
 
   if (code == 200) {
+    httpOkCount++;
     return true;
   } else {
+    httpErrCount++;
     Serial.print("HTTP error: ");
     Serial.println(code);
     return false;
@@ -97,6 +124,7 @@ static void connectivityWatchdog() {
     ESP.restart();
   } else if (downFor > CONN_SOFT_RECOVER_MS && now - lastRecoverMs > CONN_RECOVER_EVERY_MS) {
     lastRecoverMs = now;
+    wifiReassocCount++;
     Serial.println("Connectivity stalled - forcing WiFi re-association.");
     WiFi.disconnect();
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -108,6 +136,7 @@ void loggerTick() {
     unsigned long now = millis();
     if (now - lastReconnectAttempt > 10000) {
       lastReconnectAttempt = now;
+      wifiReconnectCount++;
       WiFi.disconnect();
       WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
       Serial.println("WiFi reconnecting...");
@@ -116,11 +145,19 @@ void loggerTick() {
     return;
   }
 
-  /* Flush buffered measurements */
-  while (bufCount > 0) {
+  /* Flush buffered measurements. Each sendHttp() can block up to
+     HTTP_TIMEOUT_MS, and the buffer holds up to BUFFER_SIZE points, so a full
+     flush of a slow-but-connected server can exceed the task-watchdog timeout.
+     Feed the watchdog on every send so the flush cannot trip a reset, and cap
+     the number of sends per tick so a single loop() iteration stays bounded
+     (any remainder is flushed on the next tick). */
+  uint8_t sentThisTick = 0;
+  while (bufCount > 0 && sentThisTick < FLUSH_MAX_PER_TICK) {
+    watchdogFeed();
     uint8_t idx = (bufHead - bufCount + BUFFER_SIZE) % BUFFER_SIZE;
     if (sendHttp(buffer[idx])) {
       bufCount--;
+      sentThisTick++;
       lastOkMs = millis();
     } else {
       break;
@@ -128,16 +165,62 @@ void loggerTick() {
   }
 
   connectivityWatchdog();
+
+  /* Periodic connectivity-health telemetry (only reached while connected). */
+  unsigned long nowDiag = millis();
+  if (nowDiag - lastDiagMs >= DIAG_INTERVAL_MS) {
+    lastDiagMs = nowDiag;
+    loggerSendDiagnostics();
+  }
 }
 
 bool loggerIsConnected() {
   return WiFi.status() == WL_CONNECTED;
 }
 
+void loggerSetResetReason(const char* reason) {
+  resetReasonStr = reason;
+}
+
+/* Best-effort health record: signal strength, heap, and the cumulative
+   connectivity counters. Not buffered - if it fails it is simply skipped; the
+   next record (60 s later) carries the updated cumulative counts anyway. */
+void loggerSendDiagnostics() {
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  HTTPClient http;
+  String url = String("http://") + SERVER_HOST + ":" + String(SERVER_PORT) + SERVER_PATH
+    + "?key=" + SERVER_KEY
+    + "&diag=1"
+    + "&up=" + String(millis() / 1000)
+    + "&rssi=" + String(WiFi.RSSI())
+    + "&heap=" + String(ESP.getFreeHeap())
+    + "&minheap=" + String(ESP.getMinFreeHeap())
+    + "&ok=" + String(httpOkCount)
+    + "&err=" + String(httpErrCount)
+    + "&reconn=" + String(wifiReconnectCount)
+    + "&reassoc=" + String(wifiReassocCount)
+    + "&reset=" + resetReasonStr;
+
+  http.setTimeout(HTTP_TIMEOUT_MS);
+  http.setConnectTimeout(HTTP_TIMEOUT_MS);
+  http.begin(url);
+  int code = http.GET();
+  http.end();
+  watchdogFeed();
+  if (code != 200) {
+    Serial.print("Diag HTTP error: ");
+    Serial.println(code);
+  }
+}
+
 void loggerSendDcirSamples(float ri_mOhm, uint32_t t_s, const char* samples) {
   /* Best-effort: the summary "dcir" point (with ri) is logged separately and
-     buffered, so if WiFi is down we simply skip the (large) detail batch. */
-  if (WiFi.status() != WL_CONNECTED) return;
+     buffered, so if WiFi is down we simply skip the (large) detail batch.
+     Also skip when a backlog exists (bufCount > 0): a normal send is already
+     failing, so attempting this large GET would just add a second long block
+     in the same loop() iteration. */
+  if (WiFi.status() != WL_CONNECTED || bufCount > 0) return;
 
   HTTPClient http;
   String url = String("http://") + SERVER_HOST + ":" + String(SERVER_PORT) + SERVER_PATH
@@ -149,10 +232,15 @@ void loggerSendDcirSamples(float ri_mOhm, uint32_t t_s, const char* samples) {
     + "&samples=" + samples;
 
   http.setTimeout(HTTP_TIMEOUT_MS);
+  http.setConnectTimeout(HTTP_TIMEOUT_MS);
   http.begin(url);
   int code = http.GET();
   http.end();
-  if (code != 200) {
+  watchdogFeed();
+  if (code == 200) {
+    httpOkCount++;
+  } else {
+    httpErrCount++;
     Serial.print("DCIR samples HTTP error: ");
     Serial.println(code);
   }

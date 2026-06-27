@@ -1,6 +1,7 @@
 /* Board: ESP32 DEVKIT V1 */
 
 #include <Wire.h>
+#include "esp_system.h"
 #include "config.h"
 #include "ina226.h"
 #include "discharge.h"
@@ -21,6 +22,64 @@ static unsigned long autoStartCheckTime_ms = 0;
 static int16_t autoStartVoltage = 0;
 static unsigned long autoStartStableTime = 0;
 static bool autoStartEnabled = true;
+
+/* --- Crash diagnostics (issue1: resets after 8-15 min) --- */
+#define HEAP_LOG_INTERVAL_MS 10000   /* trace heap once per measurement cycle */
+static unsigned long lastHeapLog_ms = 0;
+
+/* Short, URL-safe token for the last reset reason (sent in diagnostic records). */
+static const char* resetReasonToken() {
+  switch (esp_reset_reason()) {
+    case ESP_RST_POWERON:   return "POWERON";
+    case ESP_RST_EXT:       return "EXT";
+    case ESP_RST_SW:        return "SW";
+    case ESP_RST_PANIC:     return "PANIC";
+    case ESP_RST_INT_WDT:   return "INT_WDT";
+    case ESP_RST_TASK_WDT:  return "TASK_WDT";
+    case ESP_RST_WDT:       return "WDT";
+    case ESP_RST_DEEPSLEEP: return "DEEPSLEEP";
+    case ESP_RST_BROWNOUT:  return "BROWNOUT";
+    case ESP_RST_SDIO:      return "SDIO";
+    default:                return "UNKNOWN";
+  }
+}
+
+/* Print why the chip last reset. Distinguishes a true hang (TASK/INT WDT) from
+   an out-of-memory panic vs a power brownout - the three competing hypotheses. */
+static void printResetReason() {
+  esp_reset_reason_t r = esp_reset_reason();
+  Serial.print("Reset reason: ");
+  switch (r) {
+    case ESP_RST_POWERON:   Serial.println("POWERON (power-up)"); break;
+    case ESP_RST_EXT:       Serial.println("EXT (external pin)"); break;
+    case ESP_RST_SW:        Serial.println("SW (esp_restart)"); break;
+    case ESP_RST_PANIC:     Serial.println("PANIC (exception/abort - e.g. out of memory)"); break;
+    case ESP_RST_INT_WDT:   Serial.println("INT_WDT (interrupt watchdog - blocked in ISR/critical section)"); break;
+    case ESP_RST_TASK_WDT:  Serial.println("TASK_WDT (task watchdog - loop hung / dead loop)"); break;
+    case ESP_RST_WDT:       Serial.println("WDT (other watchdog)"); break;
+    case ESP_RST_DEEPSLEEP: Serial.println("DEEPSLEEP"); break;
+    case ESP_RST_BROWNOUT:  Serial.println("BROWNOUT (supply voltage dipped)"); break;
+    case ESP_RST_SDIO:      Serial.println("SDIO"); break;
+    default:                Serial.println("UNKNOWN"); break;
+  }
+}
+
+/* Periodic heap trace. A steady decline in free heap => leak; free heap healthy
+   but max-alloc block collapsing => fragmentation; min-free is the worst point
+   reached since boot. */
+static void heapMonitorTick() {
+  unsigned long now = millis();
+  if (now - lastHeapLog_ms < HEAP_LOG_INTERVAL_MS) return;
+  lastHeapLog_ms = now;
+  Serial.print("[heap] free=");
+  Serial.print(ESP.getFreeHeap());
+  Serial.print(" minFree=");
+  Serial.print(ESP.getMinFreeHeap());
+  Serial.print(" maxAlloc=");
+  Serial.print(ESP.getMaxAllocHeap());
+  Serial.print(" up_s=");
+  Serial.println(millis() / 1000);
+}
 
 void scanI2C() {
   Serial.println("Scanning I2C bus...");
@@ -64,6 +123,7 @@ void setup() {
   Serial.begin(115200);
   Serial.println();
   Serial.println("accucheck2 starting...");
+  printResetReason();
 
   pinMode(FET_PIN, OUTPUT);
   digitalWrite(FET_PIN, LOW);
@@ -78,6 +138,7 @@ void setup() {
   ledInit();
   dischargeInit();
   loggerInit();
+  loggerSetResetReason(resetReasonToken());
 
   /* Arm last, after the blocking WiFi connect in loggerInit(), so the connect
      loop does not trip the watchdog. */
@@ -225,6 +286,7 @@ static void checkAutoStart() {
 
 void loop() {
   watchdogFeed();
+  heapMonitorTick();
 
   while (Serial.available()) {
     char c = Serial.read();

@@ -17,6 +17,30 @@ if (isset($_GET['list'])) {
     exit;
 }
 
+// Connectivity-health diagnostics log
+if (isset($_GET['diaglog'])) {
+    $path = $DATA_DIR . '/diag.txt';
+    if (!file_exists($path)) {
+        echo json_encode(['header' => [], 'rows' => []]);
+        exit;
+    }
+    $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    if (empty($lines)) {
+        echo json_encode(['header' => [], 'rows' => []]);
+        exit;
+    }
+    $header = explode(';', $lines[0]);
+    // Return only the most recent records (default 500) to keep the page light.
+    $limit = isset($_GET['limit']) ? max(1, intval($_GET['limit'])) : 500;
+    $start = max(1, count($lines) - $limit);
+    $rows = [];
+    for ($j = $start; $j < count($lines); $j++) {
+        $rows[] = explode(';', $lines[$j]);
+    }
+    echo json_encode(['header' => $header, 'rows' => $rows]);
+    exit;
+}
+
 // List available DCIR detail files
 if (isset($_GET['dcirlist'])) {
     $files = glob($DATA_DIR . '/dcir_*.txt');

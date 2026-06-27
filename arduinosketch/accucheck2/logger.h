@@ -22,4 +22,9 @@ void loggerSend(const MeasurementData &data);
    chart. 'samples' is a comma-separated list of "t_ms:v:i" triples. */
 void loggerSendDcirSamples(float ri_mOhm, uint32_t t_s, const char* samples);
 
+/* Connectivity-health telemetry. Set the boot reset reason once (shown in the
+   diagnostic records); loggerTick() sends a record automatically every minute. */
+void loggerSetResetReason(const char* reason);
+void loggerSendDiagnostics();
+
 #endif
